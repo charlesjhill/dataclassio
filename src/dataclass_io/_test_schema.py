@@ -59,3 +59,17 @@ class CocoAnnotation(IOMixin):
     area: float
     bbox: list[float]
     iscrowd: int
+
+
+@dataclass
+class Address(IOMixin):
+    city: str
+    zip_code: tp.Optional[str] = None
+
+
+@dataclass
+class User(IOMixin):
+    id: int
+    name: str
+    address: tp.Optional[Address] = None
+    is_admin: bool = False
