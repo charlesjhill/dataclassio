@@ -18,6 +18,7 @@ def _has_default(f: Field):
 
 
 def make_from_dict_source_code(cls: type, fname: str = "") -> tuple[str, dict[str, tp.Any]]:
+    """Generate the source code and necessary namespace for a from_dict deserialization method."""
     fname = fname or f"deserialize_{cls.__name__}"
     lines = [f"def {fname}(cls, dikt):"]
     lines.append("  if not dikt: return cls()")
@@ -56,6 +57,7 @@ def make_from_dict_source_code(cls: type, fname: str = "") -> tuple[str, dict[st
 
 
 def make_from_dict(cls: type):
+    """Make a from_dict deserialization method for the given dataclass."""
     fname = f"deserialize_{cls.__name__}"
     src, ns = make_from_dict_source_code(cls, fname=fname)
     exec(src, ns)
