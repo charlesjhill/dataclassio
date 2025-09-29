@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import typing_extensions as tp
 
-from .io_mixin import IOMixin
+from dataclass_io.io_mixin import IOMixin
 
 
 @dataclass

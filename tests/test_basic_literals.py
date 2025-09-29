@@ -2,17 +2,12 @@ import copy
 
 import pytest
 
-from dataclass_io import _test_schema as _schemas
+from . import _example_schemas as _schemas
 
 
-@pytest.fixture
-def example_category():
+def test_required_literals():
     dikt = {"name": "Example", "id": 1, "supercategory": ""}
-    return dikt, _schemas.CocoCategory(**dikt)
-
-
-def test_required_literals(example_category):
-    dikt, expected = example_category
+    expected = _schemas.CocoCategory(**dikt)
 
     original_dikt = copy.deepcopy(dikt)
 
