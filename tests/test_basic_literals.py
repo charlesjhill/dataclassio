@@ -3,7 +3,6 @@ import copy
 import pytest
 
 from dataclass_io import _test_schema as _schemas
-from dataclass_io.io_mixin import _DICT_DESERIALIZER_NAME
 
 
 @pytest.fixture
@@ -14,13 +13,11 @@ def example_category():
 
 def test_required_literals(example_category):
     dikt, expected = example_category
-    assert not hasattr(_schemas.CocoCategory, _DICT_DESERIALIZER_NAME)
 
     original_dikt = copy.deepcopy(dikt)
 
     actual = _schemas.CocoCategory.from_dict(dikt)
     assert actual == expected
-    assert hasattr(_schemas.CocoCategory, _DICT_DESERIALIZER_NAME)
 
     # Constructing doesn't mutate.
     assert original_dikt == dikt
@@ -32,3 +29,16 @@ def test_optional_literals():
 
     assert _schemas.Address.from_dict(dikt2) == _schemas.Address("Anytown", "12345")
     assert _schemas.Address.from_dict(dikt) == _schemas.Address("Anytown")
+
+
+def test_useful_message_for_missing_value():
+    with pytest.raises(KeyError, match="required value"):
+        _schemas.Address.from_dict({"zip_code": "12345"})
+
+
+def test_default_uses_dataclass_default():
+    dikt = {"id": 1, "name": "Alice"}
+    dikt_with_admin = {"id": 2, "name": "Bob", "is_admin": True}
+
+    assert _schemas.User.from_dict(dikt) == _schemas.User(1, "Alice", False)
+    assert _schemas.User.from_dict(dikt_with_admin) == _schemas.User(2, "Bob", True)

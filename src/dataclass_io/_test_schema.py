@@ -71,5 +71,5 @@ class Address(IOMixin):
 class User(IOMixin):
     id: int
     name: str
-    address: tp.Optional[Address] = None
     is_admin: bool = False
+    address: tp.Optional[Address] = None
