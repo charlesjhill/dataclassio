@@ -27,7 +27,7 @@ def test_optional_literals():
 
 
 def test_useful_message_for_missing_value():
-    with pytest.raises(KeyError, match="required value"):
+    with pytest.raises(KeyError, match="required attribute.*zip_code"):
         _schemas.Address.from_dict({"zip_code": "12345"})
 
 

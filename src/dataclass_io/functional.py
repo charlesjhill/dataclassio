@@ -1,7 +1,11 @@
-from dataclasses import MISSING, Field, fields
+import dataclasses as dcs
+import logging
+import types
 from enum import Enum, auto
 
 import typing_extensions as tp
+
+_logger = logging.getLogger("dataclass_io")
 
 
 class ExtraFieldStrategy(Enum):
@@ -10,12 +14,16 @@ class ExtraFieldStrategy(Enum):
     CAPTURE = auto()
 
 
+class DataclassInstance(tp.Protocol):
+    __dataclass_fields__: tp.ClassVar
+
+
 EFS = ExtraFieldStrategy
 
 
 def _get_fields(cls: type):
     try:
-        return fields(cls)
+        return dcs.fields(cls)
     except TypeError:
         pass
 
@@ -23,8 +31,42 @@ def _get_fields(cls: type):
     raise ValueError(msg)
 
 
-def _has_default(f: Field):
-    return (f.default is not MISSING) or (f.default_factory is not MISSING)
+def _has_default(f: dcs.Field):
+    return (f.default is not dcs.MISSING) or (f.default_factory is not dcs.MISSING)
+
+
+def _get_dataclass_from_field_type(f: dcs.Field) -> tp.Optional[type[DataclassInstance]]:
+    # the field type is f: Dataclass or f: Optional[Dataclass] if
+    # the type is directly a dataclass OR has the form Union[Dataclass, NoneType]
+    t = f.type
+
+    if isinstance(t, str):
+        _logger.warning("Got str for the type of %s", f.name)
+        return None
+
+    if dcs.is_dataclass(t):
+        return t
+
+    # Check for Optional[Dataclass]
+    origin = tp.get_origin(t)
+    args = tp.get_args(t)
+
+    if isinstance(origin, str) or any(isinstance(a, str) for a in args):
+        _logger.warning("Got str in origin/args for the field %s", f.name)
+
+    if origin is tp.Union and len(args) == 2 and args[1] is types.NoneType:
+        # Optional[X]
+        if dcs.is_dataclass(args[0]):
+            return args[0]
+        else:
+            return None
+
+    # Check for list[Dataclass]
+    # if origin is list and len(args) == 1 and dcs.is_dataclass(args[0]):
+    #     return args[0]
+
+    # Unsupported for now. Do not parse
+    return None
 
 
 def make_from_dict_source_code(
@@ -35,32 +77,51 @@ def make_from_dict_source_code(
 ) -> tuple[str, dict[str, tp.Any]]:
     """Generate the source code and necessary namespace for a from_dict deserialization method."""
     fname = fname or f"deserialize_{cls.__name__}"
-    lines = [f"def {fname}(cls, dikt):"]
-    lines.append("  if not dikt: return cls()")
+    lines = [
+        f"def {fname}(cls, dikt):",
+        "  if not dikt: return cls()",
+        "  kw = {}",
+    ]
+    ns = {}
 
-    arg_parts = []  # segments that arguments to the final cls(...) call.
-    kw_lines = []  # Any lines that are added to accomodate optional arguments
     fields = _get_fields(cls)
     for f in fields:
+        # Check if this field is itself a dataclass.
+        parsed_annotation = _get_dataclass_from_field_type(f)
+        field_is_dataclass = parsed_annotation is not None
+        field_parser_name = ""
+
+        if field_is_dataclass:
+            if hasattr(parsed_annotation, "from_dict"):
+                # ez.
+                f_parser = parsed_annotation.from_dict
+            else:
+                cfg_obj = getattr(parsed_annotation, "Config", None)
+                strategy = getattr(cfg_obj, "extra_key_strategy", extra_field_strategy)
+                f_parser = make_from_dict(parsed_annotation, strategy)
+            field_parser_name = f"deserialize_{cls.__name__}_{f.name}"
+            ns[field_parser_name] = f_parser
+
         if _has_default(f):
             # a little trickier. We want to add to kw if and only if it exists in the dikt
-            kw_lines.append(f"  if {f.name!r} in dikt:")
-            kw_lines.append(f"    kw[{f.name!r}] = dikt[{f.name!r}]")
-        else:
-            lines.append(f"  if {f.name!r} not in dikt:")
-            lines.append(
-                f"    raise KeyError('\"{f.name}\" is a required value, but was missing from dikt.')"
+            lines.extend(
+                [
+                    f"  if {f.name!r} in dikt:",
+                    f"    kw[{f.name!r}] = {field_parser_name}(dikt[{f.name!r}])",
+                ]
             )
-            arg_parts.append(f"{f.name}=dikt[{f.name!r}]")
+        else:
+            err_msg = f"{f.name!r} is a required attribute for {cls.__name__}, but was missing from {{dikt=}}."
+            lines.extend(
+                [
+                    "  try:",
+                    f"    kw[{f.name!r}] = {field_parser_name}(dikt[{f.name!r}])",
+                    "  except KeyError as exc:",
+                    f"    raise KeyError(f{err_msg!r}) from exc",
+                ]
+            )
 
-    if kw_lines:
-        arg_parts.append("**kw")
-        lines.append("  kw = {}")
-        lines.extend(kw_lines)
-        del kw_lines
-
-    arg_str = ", ".join(arg_parts)
-    lines.append(f"  inst = cls({arg_str})")
+    lines.append("  inst = cls(**kw)")
     lines.extend(handle_extra_fields(fields, extra_field_strategy))
     lines.append("  return inst")
 
@@ -73,7 +134,7 @@ def make_from_dict_source_code(
 
     lines.insert(1, docstring)
     f_src = "\n".join(lines)
-    return f_src, {}
+    return f_src, ns
 
 
 def make_from_dict(cls: type, extra_field_strategy: EFS = EFS.EXCLUDE):
@@ -87,7 +148,7 @@ def make_from_dict(cls: type, extra_field_strategy: EFS = EFS.EXCLUDE):
 
 
 def handle_extra_fields(
-    fields: tp.Iterable[Field],
+    fields: tp.Iterable[dcs.Field],
     strategy: EFS,
     *,
     dict_name: str = "dikt",
@@ -101,10 +162,11 @@ def handle_extra_fields(
     field_names = tuple(f.name for f in fields)
     lines = [f"  extra_kw = {{k: v for k, v in {dict_name}.items() if k not in {field_names!r}}}"]
     if strategy == EFS.STRICT:
+        err_msg = f"Extra fields are strictly prohibited for {{{instance_name}=}}"
         lines.extend(
             (
                 "  if extra_kw:",
-                "    msg = ('Extra fields are strictly prohibited, but the the input dictionary had'",
+                f"    msg = (f'{err_msg}, but the the input dictionary had'",
                 "           f' the following extra fields: {list(extra_kw)}')",
                 "    raise ValueError(msg)",
             )
