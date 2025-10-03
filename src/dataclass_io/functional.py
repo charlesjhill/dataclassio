@@ -35,6 +35,14 @@ def _has_default(f: dcs.Field):
     return (f.default is not dcs.MISSING) or (f.default_factory is not dcs.MISSING)
 
 
+def _is_plain_optional(t: type):
+    return (
+        tp.get_origin(t) is tp.Union
+        and types.NoneType in (args := tp.get_args(t))
+        and len(args) == 2
+    )
+
+
 def _get_dataclass_from_field_type(f: dcs.Field) -> tp.Optional[type[DataclassInstance]]:
     # the field type is f: Dataclass or f: Optional[Dataclass] if
     # the type is directly a dataclass OR has the form Union[Dataclass, NoneType]
@@ -54,7 +62,7 @@ def _get_dataclass_from_field_type(f: dcs.Field) -> tp.Optional[type[DataclassIn
     if isinstance(origin, str) or any(isinstance(a, str) for a in args):
         _logger.warning("Got str in origin/args for the field %s", f.name)
 
-    if origin is tp.Union and len(args) == 2 and args[1] is types.NoneType:
+    if _is_plain_optional(t):
         # Optional[X]
         if dcs.is_dataclass(args[0]):
             return args[0]
@@ -62,11 +70,33 @@ def _get_dataclass_from_field_type(f: dcs.Field) -> tp.Optional[type[DataclassIn
             return None
 
     # Check for list[Dataclass]
-    # if origin is list and len(args) == 1 and dcs.is_dataclass(args[0]):
-    #     return args[0]
+    if origin is list and len(args) == 1 and dcs.is_dataclass(args[0]):
+        return args[0]
 
     # Unsupported for now. Do not parse
     return None
+
+
+def _get_field_expression(f: dcs.Field, field_converter_name: str = ""):
+    if field_converter_name:
+        field_container_type = tp.get_origin(f.type)
+        if field_container_type is None or _is_plain_optional(f.type):
+            # Ez.
+            return f"{field_converter_name}(dikt[{f.name!r}])"
+
+        if field_container_type is list:
+            return f"[{field_converter_name}(d) for d in dikt[{f.name!r}]]"
+
+        if field_container_type is dict:
+            msg = f"dictionaries with field converters are not yet supported! field={f}."
+            raise NotImplementedError(msg)
+
+        # It is not list, dict, none or OPTIONAL[...]
+        msg = f"Unsupported field_container_type={field_container_type} for field={f}."
+        raise NotImplementedError(msg)
+
+    # no field_converter. This is simple.
+    return f"dikt[{f.name!r}]"
 
 
 def make_from_dict_source_code(
@@ -102,12 +132,14 @@ def make_from_dict_source_code(
             field_parser_name = f"deserialize_{cls.__name__}_{f.name}"
             ns[field_parser_name] = f_parser
 
+        field_expr = _get_field_expression(f, field_parser_name)
+
         if _has_default(f):
             # a little trickier. We want to add to kw if and only if it exists in the dikt
             lines.extend(
                 [
                     f"  if {f.name!r} in dikt:",
-                    f"    kw[{f.name!r}] = {field_parser_name}(dikt[{f.name!r}])",
+                    f"    kw[{f.name!r}] = {field_expr}",
                 ]
             )
         else:
@@ -115,7 +147,7 @@ def make_from_dict_source_code(
             lines.extend(
                 [
                     "  try:",
-                    f"    kw[{f.name!r}] = {field_parser_name}(dikt[{f.name!r}])",
+                    f"    kw[{f.name!r}] = {field_expr}",
                     "  except KeyError as exc:",
                     f"    raise KeyError(f{err_msg!r}) from exc",
                 ]

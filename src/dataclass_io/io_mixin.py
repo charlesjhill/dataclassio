@@ -22,6 +22,9 @@ class IOMixin:
 
     @classmethod
     def from_dict(cls: type[tp.Self], dikt: tp.Mapping) -> tp.Self:
+        if isinstance(dikt, cls):
+            return dikt
+
         if not hasattr(cls, "__dict_deserializer_method"):
             cls.__dict_deserializer_method = make_from_dict(
                 cls, extra_field_strategy=cls.Config.extra_key_strategy

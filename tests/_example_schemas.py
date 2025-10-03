@@ -54,7 +54,7 @@ class CocoAnnotation(IOMixin):
 
 @dataclass
 class Coco(IOMixin):
-    info: CocoInfo
+    info: CocoInfo = field(default_factory=CocoInfo)
     images: list[CocoImage] = field(default_factory=list)
     annotations: list[CocoAnnotation] = field(default_factory=list)
     categories: list[CocoCategory] = field(default_factory=list)
