@@ -7,6 +7,7 @@ This project is in its early stages, but it is has minimum viable functionality 
 Up next would be:
 
 - [ ] Supporting unions of Dataclasses (incl. discriminated unions)
+- [ ] Improving docs.
 - [ ] JSON import/export in `IOMixin`.
 - [ ] Bug hunting and edge cases around the dataclass spec and typing system.
 
