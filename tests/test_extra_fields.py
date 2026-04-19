@@ -1,10 +1,10 @@
 import pytest
 
-from dataclass_io import EFS
-from dataclass_io import _example_schemas as _sch
+from dataclassio import EFS
+from dataclassio import _example_schemas as _sch
 
 
-class TestFromDictExtras:
+class TestDictExtras:
     def test_ignore(self):
         kls = _sch.CocoCategory
         dikt = {"id": 1, "name": "person", "supercategory": "person", "bonus": "bonus"}
@@ -25,3 +25,4 @@ class TestFromDictExtras:
 
         inst = kls.from_dict(dikt, extra_field_strategy=EFS.CAPTURE)
         assert inst.extra_fields == {"bonus": "bonus"}
+        assert inst.to_dict() == dikt

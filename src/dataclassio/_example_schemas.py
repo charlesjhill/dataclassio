@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 import typing_extensions as tp
 
-from dataclass_io.io_mixin import IOMixin
+from dataclassio.io_mixin import IOMixin
 
 
 @dataclass

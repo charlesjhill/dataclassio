@@ -406,7 +406,7 @@ toml = [
 ]
 
 [[package]]
-name = "dataclass-io"
+name = "dataclassio"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

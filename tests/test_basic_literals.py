@@ -2,7 +2,7 @@ import copy
 
 import pytest
 
-from dataclass_io import _example_schemas as _schemas
+from dataclassio import _example_schemas as _schemas
 
 
 class TestDictLiterals:

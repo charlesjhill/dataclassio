@@ -1,15 +1,32 @@
 [project]
-name = "dataclass-io"
+name = "dataclassio"
 version = "0.1.0"
-description = "Add your description here"
+description = "A lightweight package for converting dataclass hierarchies to and from dictionaries."
 readme = "README.md"
 authors = [
-    { name = "Chase", email = "chasehill70@gmail.com" }
+    { name = "Charles Hill", email = "chasehill70@gmail.com" }
 ]
 requires-python = ">=3.11"
 dependencies = [
     "typing-extensions~=4.15",
 ]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+]
+license = "MIT"
+
+[project.urls]
+Homepage = "https://github.com/charlesjhill/dataclassio"
 
 [build-system]
 requires = ["uv_build>=0.8.22,<0.9.0"]
@@ -26,7 +43,7 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = [
-    "--cov=dataclass_io",
+    "--cov=dataclassio",
     "--cov-report=term-missing",
     "--durations=10",
     "--verbosity=1"

@@ -1,12 +1,13 @@
-from dataclass_io._example_schemas import Address, TinyRow, TinyTable, User
+from dataclassio._example_schemas import Address, TinyRow, TinyTable, User
 
 
-class TestFromDictNestedDataclasses:
+class TestDictNestedDataclasses:
     def test_optional_nested_dataclass(self):
         ex_user = {"id": 1, "name": "username"}
 
         actual = User.from_dict(ex_user)
         assert actual.address is None
+        assert actual.to_dict(skip_defaults=True) == ex_user
 
     def test_simple_nested_dataclass(self):
         ex_user = {"id": 1, "name": "username", "address": {"city": "Anytown"}}
@@ -14,6 +15,7 @@ class TestFromDictNestedDataclasses:
         actual = User.from_dict(ex_user)
         assert isinstance(actual.address, Address)
         assert actual.address.city == "Anytown"
+        assert actual.to_dict(skip_defaults=True) == ex_user
 
     def test_simple_list_dataclass(self):
         ex_data = {
@@ -32,6 +34,7 @@ class TestFromDictNestedDataclasses:
         assert len(actual.rows) == 2
         assert all(isinstance(r, TinyRow) for r in actual.rows)
         assert actual.rows[1].name == "b"
+        assert actual.to_dict(skip_defaults=True) == ex_data
 
     def test_dataclass_dict_value(self):
         data = {
@@ -46,3 +49,4 @@ class TestFromDictNestedDataclasses:
         assert isinstance(actual.named_addresses["home"], Address)
         assert isinstance(actual.named_addresses["work"], Address)
         assert actual.named_addresses["work"].city == "Coolsville"
+        assert actual.to_dict(skip_defaults=True) == data
