@@ -20,11 +20,14 @@ dev = [
     "ipython>=9.5.0",
     "jupyter>=1.1.1",
     "pytest>=8.4.2",
+    "pytest-cov>=7.1.0",
     "rich>=14.1.0",
 ]
 
 [tool.pytest.ini_options]
 addopts = [
+    "--cov=dataclass_io",
+    "--cov-report=term-missing",
     "--durations=10",
     "--verbosity=1"
 ]
