@@ -1,3 +1,5 @@
+"""Module with example schemas for testing or demonstrations."""
+
 from dataclasses import dataclass, field
 
 import typing_extensions as tp
@@ -32,6 +34,35 @@ class CocoInfo(IOMixin):
             kw["date_created"] = dikt["date_created"]
         inst = cls(**kw)
         return inst
+
+    def manual_to_dict(self, skip_defaults=False):
+        """Serialize a CocoInfo instance into a dictionary."""
+        if skip_defaults:
+            dikt = {}
+            if (v := self.year) is not None:
+                dikt["year"] = v
+            if (v := self.version) is not None:
+                dikt["version"] = v
+            if (v := self.description) is not None:
+                dikt["description"] = v
+            if (v := self.contributor) is not None:
+                dikt["contributor"] = v
+            if (v := self.url) is not None:
+                dikt["url"] = v
+            if (v := self.date_created) is not None:
+                dikt["date_created"] = v
+            dikt.update(self.extra_fields)
+        else:
+            dikt = {
+                "year": self.year,
+                "version": self.version,
+                "description": self.description,
+                "contributor": self.contributor,
+                "url": self.url,
+                "date_created": self.date_created,
+                **self.extra_fields,
+            }
+        return dikt
 
 
 @dataclass
@@ -76,6 +107,40 @@ class CocoImage(IOMixin):
         inst = cls(**kw)
         return inst
 
+    def manual_to_dict(self, skip_defaults=False):
+        """Serialize a CocoImage instance into a dictionary."""
+        if skip_defaults:
+            dikt = {
+                "id": self.id,
+                "file_name": self.file_name,
+            }
+            if (v := self.width) is not None:
+                dikt["width"] = v
+            if (v := self.height) is not None:
+                dikt["height"] = v
+            if (v := self.license) is not None:
+                dikt["license"] = v
+            if (v := self.flickr_url) is not None:
+                dikt["flickr_url"] = v
+            if (v := self.coco_url) is not None:
+                dikt["coco_url"] = v
+            if (v := self.date_captured) is not None:
+                dikt["date_captured"] = v
+            dikt.update(self.extra_fields)
+        else:
+            dikt = {
+                "id": self.id,
+                "file_name": self.file_name,
+                "width": self.width,
+                "height": self.height,
+                "license": self.license,
+                "flickr_url": self.flickr_url,
+                "coco_url": self.coco_url,
+                "date_captured": self.date_captured,
+                **self.extra_fields,
+            }
+        return dikt
+
 
 @dataclass
 class CocoLicense(IOMixin):
@@ -104,6 +169,25 @@ class CocoLicense(IOMixin):
         inst = cls(**kw)
         return inst
 
+    def manual_to_dict(self, skip_defaults=False):
+        """Serialize a CocoLicense instance into a dictionary."""
+        if skip_defaults:
+            dikt = {
+                "id": self.id,
+                "name": self.name,
+            }
+            if (v := self.url) is not None:
+                dikt["url"] = v
+            dikt.update(self.extra_fields)
+        else:
+            dikt = {
+                "id": self.id,
+                "name": self.name,
+                "url": self.url,
+                **self.extra_fields,
+            }
+        return dikt
+
 
 @dataclass
 class CocoCategory(IOMixin):
@@ -131,6 +215,25 @@ class CocoCategory(IOMixin):
             kw["supercategory"] = dikt["supercategory"]
         inst = cls(**kw)
         return inst
+
+    def manual_to_dict(self, skip_defaults=False):
+        """Serialize a CocoCategory instance into a dictionary."""
+        if skip_defaults:
+            dikt = {
+                "id": self.id,
+                "name": self.name,
+            }
+            if (v := self.supercategory) is not None:
+                dikt["supercategory"] = v
+            dikt.update(self.extra_fields)
+        else:
+            dikt = {
+                "id": self.id,
+                "name": self.name,
+                "supercategory": self.supercategory,
+                **self.extra_fields,
+            }
+        return dikt
 
 
 @dataclass
@@ -185,6 +288,35 @@ class CocoAnnotation(IOMixin):
         inst = cls(**kw)
         return inst
 
+    def manual_to_dict(self, skip_defaults=False):
+        """Serialize a CocoAnnotation instance into a dictionary."""
+        if skip_defaults:
+            dikt = {
+                "id": self.id,
+                "image_id": self.image_id,
+                "category_id": self.category_id,
+                "bbox": self.bbox,
+            }
+            if (v := self.area) is not None:
+                dikt["area"] = v
+            if (v := self.iscrowd) != 0:
+                dikt["iscrowd"] = v
+            if (v := self.segmentation) is not None:
+                dikt["segmentation"] = v
+            dikt.update(getattr(self, "_extra_fields", {}))
+        else:
+            dikt = {
+                "id": self.id,
+                "image_id": self.image_id,
+                "category_id": self.category_id,
+                "bbox": self.bbox,
+                "area": self.area,
+                "iscrowd": self.iscrowd,
+                "segmentation": self.segmentation,
+                **self.extra_fields,
+            }
+        return dikt
+
 
 @dataclass
 class Coco(IOMixin):
@@ -211,6 +343,33 @@ class Coco(IOMixin):
         inst = cls(**kw)
         return inst
 
+    def manual_to_dict(self, skip_defaults=False):
+        """Serialize a Coco instance into a dictionary."""
+        if skip_defaults:
+            dikt = {}
+            if (v := CocoInfo.manual_to_dict(self.info)) != CocoInfo():
+                dikt["info"] = v
+            if v := [CocoImage.manual_to_dict(d) for d in self.images]:
+                dikt["images"] = v
+            if v := [CocoAnnotation.manual_to_dict(d) for d in self.annotations]:
+                dikt["annotations"] = v
+            if v := [CocoCategory.manual_to_dict(d) for d in self.categories]:
+                dikt["categories"] = v
+            if v := [CocoLicense.manual_to_dict(d) for d in self.licenses]:
+                dikt["licenses"] = v
+            dikt.update(self.extra_fields)
+        else:
+            dikt = {
+                "info": CocoInfo.manual_to_dict(self.info),
+                "images": [CocoImage.manual_to_dict(d) for d in self.images],
+                "annotations": [CocoAnnotation.manual_to_dict(d) for d in self.annotations],
+                "categories": [CocoCategory.manual_to_dict(d) for d in self.categories],
+                "licenses": [CocoLicense.manual_to_dict(d) for d in self.licenses],
+                **self.extra_fields,
+            }
+
+        return dikt
+
 
 @dataclass
 class Address(IOMixin):
@@ -224,15 +383,18 @@ class User(IOMixin):
     name: str
     is_admin: bool = False
     address: tp.Optional[Address] = None
+    named_addresses: dict[str, Address] = field(default_factory=dict)
 
 
 @dataclass
 class TinyRow(IOMixin):
     id: int
     name: str
+    metadata: dict = field(default_factory=dict)
+    data: list = field(default_factory=list)
 
 
 @dataclass
 class TinyTable(IOMixin):
     id: int
-    fks: list[TinyRow] = field(default_factory=list)
+    rows: list[TinyRow] = field(default_factory=list)
