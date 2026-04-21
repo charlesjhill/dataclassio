@@ -1,5 +1,5 @@
 [project]
-name = "dataclassio"
+name = "hill.dataclassio"
 version = "0.1.0"
 description = "A lightweight package for converting dataclass hierarchies to and from dictionaries."
 readme = "README.md"
@@ -32,6 +32,9 @@ Homepage = "https://github.com/charlesjhill/dataclassio"
 requires = ["uv_build>=0.8.22,<0.9.0"]
 build-backend = "uv_build"
 
+[tool.uv.build-backend]
+module-name = "dataclassio"
+
 [dependency-groups]
 dev = [
     "ipython>=9.5.0",
@@ -39,6 +42,7 @@ dev = [
     "pytest>=8.4.2",
     "pytest-cov>=7.1.0",
     "rich>=14.1.0",
+    "twine>=6.2.0",
 ]
 
 [tool.pytest.ini_options]
