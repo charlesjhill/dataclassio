@@ -398,3 +398,20 @@ class TinyRow(IOMixin):
 class TinyTable(IOMixin):
     id: int
     rows: list[TinyRow] = field(default_factory=list)
+
+
+@dataclass
+class Metric(IOMixin):
+    value: float
+    unit: str
+
+
+@dataclass
+class Dashboard(IOMixin):
+    title: str
+    data_points: dict[str, list[Metric | None]]
+
+
+@dataclass
+class MaybeMetric(IOMixin):
+    metric: Metric | None

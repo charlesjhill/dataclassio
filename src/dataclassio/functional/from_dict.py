@@ -4,8 +4,8 @@ import typing_extensions as tp
 
 from ..types import EFS, DataclassInstance
 from .common import (
+    SerializerData,
     field_has_default,
-    get_dataclass_from_field_type,
     get_field_expression,
     get_fields,
     indent,
@@ -38,24 +38,16 @@ def make_from_dict_source_code(
     fields = get_fields(cls)
     for f in fields:
         # Check if this field is itself a dataclass.
-        parsed_annotation = get_dataclass_from_field_type(f)
-        field_is_dataclass = parsed_annotation is not None
-        field_parser_name = ""
-
-        if field_is_dataclass:
-            if (parsed_annotation, extra_field_strategy) in _KNOWN_DESERIALIZERS:
-                f_parser = _KNOWN_DESERIALIZERS[(parsed_annotation, extra_field_strategy)]
-            else:
-                f_parser = make_from_dict(
-                    parsed_annotation,
-                    extra_field_strategy=extra_field_strategy,
-                )
-                _KNOWN_DESERIALIZERS[(parsed_annotation, extra_field_strategy)] = f_parser
-
-            field_parser_name = f"deserialize_{parsed_annotation.__name__}"
-            ns[field_parser_name] = f_parser
-
-        field_expr = get_field_expression(f, field_parser_name)
+        field_expr = get_field_expression(
+            f,
+            serializer_data=SerializerData(
+                registry=_KNOWN_DESERIALIZERS,
+                namespace=ns,
+                maker_func=lambda t: make_from_dict(t, extra_field_strategy=extra_field_strategy),
+                cache_args=(extra_field_strategy,),
+            ),
+            direction="from_dict",
+        )
 
         if field_has_default(f):
             # a little trickier. We want to add to kw if and only if it exists in the dikt
@@ -96,6 +88,9 @@ def make_from_dict_source_code(
 
 def make_from_dict(cls: type[DataclassInstance], extra_field_strategy: EFS = EFS.IGNORE):
     """Make a from_dict deserialization method for the given dataclass."""
+    if (f := _KNOWN_DESERIALIZERS.get((cls, extra_field_strategy), None)) is not None:
+        return f
+
     fname = f"deserialize_{cls.__name__}"
     src, ns = make_from_dict_source_code(
         cls, funcname=fname, extra_field_strategy=extra_field_strategy

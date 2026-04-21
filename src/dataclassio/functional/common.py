@@ -1,12 +1,9 @@
 import dataclasses as dcs
-import logging
 import types
 
 import typing_extensions as tp
 
 from ..types import DataclassInstance
-
-_logger = logging.getLogger("dataclass_io")
 
 
 def indent(strs: tp.Iterable[str], level=2):
@@ -37,47 +34,14 @@ def field_get_default(f: dcs.Field):
     return None
 
 
-def get_dataclass_from_field_type(f: dcs.Field) -> tp.Optional[type[DataclassInstance]]:
-    # the field type is f: Dataclass or f: Optional[Dataclass] if
-    # the type is directly a dataclass OR has the form Union[Dataclass, NoneType]
-    t = f.type
-
-    # TODO: We will need to make this recursive to support freakier expressions.
-
-    if isinstance(t, str):
-        _logger.warning("Got str for the type of %s", f.name)
-        return None
-
-    if dcs.is_dataclass(t):
-        return tp.cast(type[DataclassInstance], t)
-
-    # Check for Optional[Dataclass]
-    origin = tp.get_origin(t)
-    args = tp.get_args(t)
-
-    if isinstance(origin, str) or any(isinstance(a, str) for a in args):
-        _logger.warning("Got str in origin/args for the field %s", f.name)
-
-    parsed_dc_types = [x for x in args if dcs.is_dataclass(x) and isinstance(x, type)]
-
-    if len(parsed_dc_types) >= 2:
-        msg = f"Multiple top-level dataclasses in the type annotation for field={f}."
-        raise ValueError(msg)
-
-    if len(parsed_dc_types) == 1:
-        # There was one valid option, which we will return
-        return parsed_dc_types[0]
-
-
-def strip_optional(t: type) -> tuple[tp.Any, bool]:
+def strip_optional(t: tp.TypeForm) -> tuple[tp.Any, bool]:
     """Check if a type annotation is an optional and if so, remove it.
 
     Returns:
         (type, bool): Corresponds to (non-None arguments of the type, flag if the type was an Optional)
     """
     origin, args = tp.get_origin(t), tp.get_args(t)
-
-    if origin is not tp.Union:
+    if not (origin is tp.Union or origin is types.UnionType):
         return t, False
 
     non_none_args = [x for x in args if x is not types.NoneType]
@@ -93,54 +57,73 @@ def strip_optional(t: type) -> tuple[tp.Any, bool]:
     return tp.Union[non_none_args], True
 
 
+class SerializerData(tp.NamedTuple):
+    """Extra information needed by `get_field_expression` to do its thing."""
+
+    registry: tp.MutableMapping
+    namespace: tp.MutableMapping
+    maker_func: tp.Callable[[DataclassInstance], tp.Callable]
+    cache_args: tuple
+
+
 def get_field_expression(
     f: dcs.Field,
-    field_converter_name: str = "",
+    serializer_data: SerializerData,
     direction: tp.Literal["to_dict", "from_dict"] = "from_dict",
 ):
+    def build_expr(t: tp.TypeForm, expr_str: str):
+        origin, args = tp.get_origin(t), tp.get_args(t)
+
+        stripped_type, is_optional = strip_optional(t)
+
+        if is_optional:
+            inner_expr = build_expr(stripped_type, expr_str)
+            if inner_expr == expr_str:
+                return expr_str
+            return f"({inner_expr} if {expr_str} is not None else None)"
+
+        if dcs.is_dataclass(t):
+            cache_key = (t, *serializer_data.cache_args)
+            if cache_key not in serializer_data.registry:
+                serializer_data.registry[cache_key] = None  # Refuse to recurse.
+                serializer_data.registry[cache_key] = serializer_data.maker_func(t)
+            fname = f"{func_prefix}_{t.__name__}"
+            serializer_data.namespace[fname] = serializer_data.registry[cache_key]
+            return f"{fname}({expr_str})"
+
+        if origin in (list, tp.List):
+            inner_type = args[0] if args else tp.Any
+            inner_expr = build_expr(inner_type, "x")
+            if inner_expr == "x":
+                # No list comprehension needed.
+                return expr_str
+            return f"[{inner_expr} for x in {expr_str}]"
+
+        if origin in (dict, tp.Mapping):
+            k_type, v_type = args if args else (tp.Any, tp.Any)
+            k_expr = build_expr(k_type, "k")
+            v_expr = build_expr(v_type, "v")
+            if k_expr == "k" and v_expr == "v":
+                # No subparsing necesary, just return as is.
+                return expr_str
+            return f"{{{k_expr}: {v_expr} for k, v in {expr_str}.items()}}"
+
+        if (origin is tp.Union or origin is types.UnionType) and (
+            any(dcs.is_dataclass(a) for a in args)
+        ):
+            msg = "Union types where any non-None argument is a dataclass are not currently supported."
+            raise RuntimeError(msg)
+
+        return expr_str
+
     if direction == "from_dict":
         access_expr = f"dikt[{f.name!r}]"
+        func_prefix = "deserialize"
     elif direction == "to_dict":
         access_expr = f"inst.{f.name}"
+        func_prefix = "serialize"
     else:
         msg = f"Unknown {direction=}. Expected 'to_dict' or 'from_dict'."
         raise ValueError(msg)
 
-    if not field_converter_name:
-        # no field_converter. This is simple.
-        return access_expr
-
-    # If we are here, we know there is a dataclass we need to hydrate somewhere in the typehint.
-    stripped_type, is_optional = strip_optional(f.type)
-    field_container_type = tp.get_origin(stripped_type)
-
-    if field_container_type is None:
-        # Support scalar dataclasses
-
-        if is_optional and direction == "to_dict":
-            # We shouldn't call a field convert on a nested dataclass if it could be optional and is None.
-            expr = f"({field_converter_name}(x) if (x := {access_expr}) is not None else None)"
-        else:
-            expr = f"{field_converter_name}({access_expr})"
-
-        return expr
-
-    if field_container_type is list:
-        return f"[{field_converter_name}(d) for d in {access_expr}]"
-
-    if field_container_type is dict:
-        field_args = tp.get_args(f.type)
-        if len(field_args) == 2 and dcs.is_dataclass(field_args[1]):
-            # dict[..., Dataclass]
-            return f"{{k: {field_converter_name}(v) for k, v in {access_expr}.items()}}"
-
-        if len(field_args) == 2 and dcs.is_dataclass(field_args[0]):
-            # dict[Dataclass, ...]
-            return f"{{{field_converter_name}(k): v for k, v in {access_expr}.items()}}"
-
-        msg = f"Unsupported dict type-hints: field={f}"
-        raise NotImplementedError(msg)
-
-    # It is not list, dict, none or OPTIONAL[...]
-    msg = f"Unsupported field_container_type={field_container_type} for field={f}."
-    raise NotImplementedError(msg)
+    return build_expr(f.type, access_expr)

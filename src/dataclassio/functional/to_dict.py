@@ -2,9 +2,9 @@ import typing_extensions as tp
 
 from ..types import DataclassInstance
 from .common import (
+    SerializerData,
     field_get_default,
     field_has_default,
-    get_dataclass_from_field_type,
     get_field_expression,
     get_fields,
     indent,
@@ -34,25 +34,18 @@ def make_to_dict_source_code(
     # N.B., We initialize the dictionary with any extra fields. By construction, they
     #  are disjoint with the dataclass fields
     default_check_lines = []
-    literal_lines = [f"    **getattr(inst, {_EXTRA_FIELD_ATTR_NAME!r}, {{}}),"]
+    literal_lines = [f"**getattr(inst, {_EXTRA_FIELD_ATTR_NAME!r}, {{}}),"]
     for f in get_fields(cls):
-        # 1. Check if we will need to recurse into this field.
-        parsed_annotation = get_dataclass_from_field_type(f)
-        field_is_dataclass = parsed_annotation is not None
-        field_parser_name = ""
-
-        if field_is_dataclass:
-            cache_key = (parsed_annotation, skip_defaults)
-            f_parser = _KNOWN_SERIALIZERS.get(cache_key, None)
-            if f_parser is None:
-                f_parser = make_to_dict(parsed_annotation, skip_defaults=skip_defaults)
-                _KNOWN_SERIALIZERS[cache_key] = f_parser
-            field_parser_name = f"serialize_{parsed_annotation.__name__}"
-            ns[field_parser_name] = f_parser
-
-        # Now, we need to form the expression itself that gets the value.
+        # Form the expression itself that gets the value.
         field_expr = get_field_expression(
-            f, field_converter_name=field_parser_name, direction="to_dict"
+            f,
+            direction="to_dict",
+            serializer_data=SerializerData(
+                registry=_KNOWN_SERIALIZERS,
+                namespace=ns,
+                maker_func=lambda t: make_to_dict(t, skip_defaults=skip_defaults),
+                cache_args=(skip_defaults,),
+            ),
         )
 
         # Now on to the big leagues. so, invoked `field_expr` should get us the value to use
@@ -80,8 +73,8 @@ def make_to_dict_source_code(
                 ns[ns_key] = field_default
 
             strs = (
-                f"if (v := {field_expr}) {comparator} {ns_key}:",
-                f"  dikt[{f.name!r}] = v",
+                f"if inst.{f.name} {comparator} {ns_key}:",
+                f"  dikt[{f.name!r}] = {field_expr}",
             )
             default_check_lines.extend(strs)
         else:
@@ -105,6 +98,9 @@ def make_to_dict_source_code(
 
 
 def make_to_dict(cls: type[DataclassInstance], skip_defaults: bool = False):
+    if (f := _KNOWN_SERIALIZERS.get((cls, skip_defaults), None)) is not None:
+        return f
+
     fname = f"serialize_{cls.__name__}"
     src, ns = make_to_dict_source_code(cls=cls, funcname=fname, skip_defaults=skip_defaults)
     exec(src, ns)
