@@ -2,14 +2,8 @@ import dataclasses as dcs
 
 import typing_extensions as tp
 
+from ..core import SerializerData, TextLines, field_has_default, get_field_expression, get_fields
 from ..types import EFS, DataclassInstance
-from .common import (
-    SerializerData,
-    field_has_default,
-    get_field_expression,
-    get_fields,
-    indent,
-)
 
 __all__ = (
     "make_from_dict_source_code",
@@ -18,24 +12,20 @@ __all__ = (
 
 _KNOWN_DESERIALIZERS: dict[tuple[type, EFS], tp.Callable[[tp.Mapping], tp.Any]] = {}
 _EXTRA_FIELD_ATTR_NAME = "_extra_fields"
+_SPACER = "  "
 
 
 def make_from_dict_source_code(
     cls: type[DataclassInstance],
     funcname: str = "",
     extra_field_strategy=EFS.IGNORE,
-    include_src_in_docstring: bool = True,
-) -> tuple[str, dict[str, tp.Any]]:
+) -> tuple[TextLines, dict[str, tp.Any]]:
     """Generate the source code and necessary namespace for a from_dict deserialization method."""
     funcname = funcname or f"deserialize_{cls.__name__}"
-    lines = [
-        f"def {funcname}(dikt):",
-        f'  """Deserialize a {cls.__name__} instance from a dictionary."""',
-        "  kw = {}",
-    ]
     ns: dict[str, tp.Any] = {"kls": cls}
 
     fields = get_fields(cls)
+    field_expressions: list[tuple[str, str, bool]] = []
     for f in fields:
         # Check if this field is itself a dataclass.
         field_expr = get_field_expression(
@@ -48,45 +38,44 @@ def make_from_dict_source_code(
             ),
             direction="from_dict",
         )
+        field_expressions.append((f.name, field_expr, field_has_default(f)))
 
-        if field_has_default(f):
-            # a little trickier. We want to add to kw if and only if it exists in the dikt
-            strs = (
-                f"if {f.name!r} in dikt:",
-                f"  kw[{f.name!r}] = {field_expr}",
-            )
-            lines.extend(indent(strs))
-        else:
-            err_msg = f"{f.name!r} is a required attribute for {cls.__name__}, but was missing from {{dikt=}}."
-            strs = (
-                "try:",
-                f"  kw[{f.name!r}] = {field_expr}",
-                "except KeyError as exc:",
-                f"  raise KeyError(f{err_msg!r}) from exc",
-            )
-            lines.extend(indent(strs))
+    # Assemble the final function body
+    lines = TextLines(spacer=_SPACER)
+    with lines.indent(f"def {funcname}(dikt):"):
+        lines.append(f'"""Deserialize a {cls.__name__} instance from a dictionary."""')
+        lines.append("kw = {}")
+        for fname, field_expr, has_default in field_expressions:
+            if has_default:
+                # a little trickier. We want to add to kw if and only if it exists in the dikt
+                with lines.indent(f"if {fname!r} in dikt:"):
+                    lines.append(f"kw[{fname!r}] = {field_expr}")
+            else:
+                err_msg = f"{fname!r} is a required attribute for {cls.__name__}, but was missing from {{dikt=}}."
+                with lines.indent("try:"):
+                    lines.append(f"kw[{fname!r}] = {field_expr}")
+                with lines.indent("except KeyError as exc:"):
+                    # Note the f-string
+                    lines.append(f"raise KeyError(f{err_msg!r}) from exc")
 
-    lines.append("  inst = kls(**kw)")
-    lines.extend(
-        indent(
-            _handle_extra_fields(
-                fields, extra_field_strategy, ns=ns, attribute_name=_EXTRA_FIELD_ATTR_NAME
-            )
+        extras = _handle_extra_fields(
+            fields, extra_field_strategy, ns=ns, attribute_name=_EXTRA_FIELD_ATTR_NAME
         )
-    )
-    lines.append("  return inst")
+        if extras:
+            lines.append("inst = kls(**kw)")
+            lines.extend(extras)
+            lines.append("return inst")
+        else:
+            lines.append("return kls(**kw)")
 
-    # Generate a docstring
-    if include_src_in_docstring:
-        docstring_src = "\n".join(indent(lines[2:]))
-        docstring = f'  """Deserialize a {cls.__name__} instance from a dictionary.\n\n{docstring_src}\n"""'
-        lines[1] = docstring  # replace the existing docstring with this new one.
-
-    f_src = "\n".join(lines)
-    return f_src, ns
+    return lines, ns
 
 
-def make_from_dict(cls: type[DataclassInstance], extra_field_strategy: EFS = EFS.IGNORE):
+def make_from_dict(
+    cls: type[DataclassInstance],
+    extra_field_strategy: EFS = EFS.IGNORE,
+    include_src_in_docstring: bool = False,
+):
     """Make a from_dict deserialization method for the given dataclass."""
     if (f := _KNOWN_DESERIALIZERS.get((cls, extra_field_strategy), None)) is not None:
         return f
@@ -95,8 +84,12 @@ def make_from_dict(cls: type[DataclassInstance], extra_field_strategy: EFS = EFS
     src, ns = make_from_dict_source_code(
         cls, funcname=fname, extra_field_strategy=extra_field_strategy
     )
-    exec(src, ns)
-    return ns[fname]
+    exec(src.export(), ns)
+    func = ns[fname]
+    if include_src_in_docstring:
+        func.__doc__ += f"\n\n{src[2:]!s}\n"
+
+    return func
 
 
 def _handle_extra_fields(
@@ -107,10 +100,11 @@ def _handle_extra_fields(
     dict_name: str = "dikt",
     instance_name: str = "inst",
     attribute_name: str = "_extra_fields",
-) -> list[str]:
+) -> TextLines:
+    lines = TextLines(spacer=_SPACER)
     if strategy == EFS.IGNORE:
         # Excluding extra fields is the easiest thing known to man.
-        return []
+        return lines
 
     # Precompute a lookup table with the known fields for this class.
     field_names_set_varname = "_KNOWN_FIELDS"
@@ -122,17 +116,16 @@ def _handle_extra_fields(
 
     if strategy == EFS.STRICT:
         err_msg = f"Extra fields are strictly prohibited for {{{instance_name}=}}"
-        return [
-            f"extra_kw = {extra_field_expr}",
-            "if extra_kw:",
-            f"  msg = (f'{err_msg}, but the the input dictionary had'",
-            "         f' the following extra fields: {list(extra_kw)}')",
-            "  raise ValueError(msg)",
-            f"{instance_name}.{attribute_name} = extra_kw",
-        ]
+        lines.append(f"extra_kw = {extra_field_expr}")
+        with lines.indent("if extra_kw:"):
+            lines.append(f"msg = (f'{err_msg}, but the the input dictionary had'")
+            lines.append("       f' the following extra fields: {list(extra_kw)}')")
+            lines.append("raise ValueError(msg)")
+        return lines
 
     if strategy == EFS.CAPTURE:
-        return [f"{instance_name}.{attribute_name} = {extra_field_expr}"]
+        lines.append(f"{instance_name}.{attribute_name} = {extra_field_expr}")
+        return lines
 
     msg = f"Unexpected {strategy=}. Must be an ExtraFieldStrategy enumeration."
     raise ValueError(msg)

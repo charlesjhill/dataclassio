@@ -7,7 +7,7 @@ from .functional.from_dict import _EXTRA_FIELD_ATTR_NAME
 from .types import EFS
 
 
-@dataclass()
+@dataclass
 class IOMixin:
     __slots__ = _EXTRA_FIELD_ATTR_NAME
 

@@ -1,31 +1,25 @@
 import typing_extensions as tp
 
-from ..types import DataclassInstance
-from .common import (
+from ..core import (
     SerializerData,
-    field_get_default,
-    field_has_default,
+    TextLines,
+    get_field_default,
     get_field_expression,
     get_fields,
-    indent,
 )
+from ..types import NO_DEFAULT, DataclassInstance
 from .from_dict import _EXTRA_FIELD_ATTR_NAME
 
 _KNOWN_SERIALIZERS: dict[tuple[type, bool], tp.Callable[[DataclassInstance], dict]] = {}
+_SPACER = "  "
 
 
 def make_to_dict_source_code(
     cls: type[DataclassInstance],
     funcname: str = "",
     skip_defaults: bool = False,
-    include_src_in_docstring: bool = True,
-) -> tuple[str, dict[str, tp.Any]]:
+) -> tuple[TextLines, dict[str, tp.Any]]:
     funcname = funcname or f"serialize_{cls.__name__}"
-    lines = [
-        f"def {funcname}(inst):",
-        f'  """Serialize a {cls.__name__} instance into a dictionary."""',
-        "  dikt = {",
-    ]
     ns: dict[str, tp.Any] = {}
 
     # Start building up the output.
@@ -33,8 +27,8 @@ def make_to_dict_source_code(
     #  have extra fields. We can assume we have fully-formed instances.
     # N.B., We initialize the dictionary with any extra fields. By construction, they
     #  are disjoint with the dataclass fields
-    default_check_lines = []
-    literal_lines = [f"**getattr(inst, {_EXTRA_FIELD_ATTR_NAME!r}, {{}}),"]
+    default_check_lines = TextLines(spacer=_SPACER)
+    literal_lines = TextLines(spacer=_SPACER)
     for f in get_fields(cls):
         # Form the expression itself that gets the value.
         field_expr = get_field_expression(
@@ -55,10 +49,9 @@ def make_to_dict_source_code(
 
         # We need an explicit check for `has_default` since `get_default` cannot distinguish between
         # "no default" and "default=None".
-        if skip_defaults and field_has_default(f):
+        if skip_defaults and (field_default := get_field_default(f)) is not NO_DEFAULT:
             # Add a hardcoded gate that checks if we have a default value. If so, don't
             #  add anything to the dict.
-            field_default = field_get_default(f)
             comparator = "is not" if field_default is None else "!="
 
             # TODO: Consider adding handler for boolean cases?
@@ -72,36 +65,49 @@ def make_to_dict_source_code(
                 ns_key = f"{f.name}_default"
                 ns[ns_key] = field_default
 
-            strs = (
-                f"if inst.{f.name} {comparator} {ns_key}:",
-                f"  dikt[{f.name!r}] = {field_expr}",
-            )
-            default_check_lines.extend(strs)
+            with default_check_lines.indent(f"if inst.{f.name} {comparator} {ns_key}:"):
+                default_check_lines.append(f"dikt[{f.name!r}] = {field_expr}")
         else:
             # Either this field has no default, or we are keeping all values. This easy.
             literal_lines.append(f"{f.name!r}: {field_expr},")
 
-    lines.extend(indent(literal_lines, level=4))
-    lines.append("  }")
-    lines.extend(indent(default_check_lines, level=2))
-    lines.append("  return dikt")
+    # Handle the extra fields. If there are no "default checking" lines, we can pack this into
+    #  the bottom of the literals. If we do check some fields for their default value,
+    #  we include the extra field population right before export to try keeping the "real"
+    #  fields in order in the resulting dictionary.
+    if not default_check_lines:
+        literal_lines.append(f"**getattr(inst, {_EXTRA_FIELD_ATTR_NAME!r}, {{}}),")
+    else:
+        with default_check_lines.indent(f"if hasattr(inst, {_EXTRA_FIELD_ATTR_NAME!r}):"):
+            default_check_lines.append(f"dikt.update(inst.{_EXTRA_FIELD_ATTR_NAME})")
 
-    if include_src_in_docstring:
-        docstring_src = "\n".join(indent(lines[2:]))
-        docstring = (
-            f'  """Serialize a {cls.__name__} instance into a dictionary.\n\n{docstring_src}\n"""'
-        )
-        lines[1] = docstring
+    lines = TextLines(spacer=_SPACER)
+    with lines.indent(f"def {funcname}(inst):"):
+        lines.append(f'"""Serialize a {cls.__name__} instance into a dictionary."""')
+        if literal_lines:
+            with lines.indent("dikt = {"):
+                lines.extend(literal_lines)
+            lines.append("}")
+        else:
+            lines.append("dikt = {}")
+        lines.extend(default_check_lines)
+        lines.append("return dikt")
 
-    f_src = "\n".join(lines)
-    return f_src, ns
+    return lines, ns
 
 
-def make_to_dict(cls: type[DataclassInstance], skip_defaults: bool = False):
+def make_to_dict(
+    cls: type[DataclassInstance],
+    skip_defaults: bool = False,
+    include_src_in_docstring: bool = True,
+):
     if (f := _KNOWN_SERIALIZERS.get((cls, skip_defaults), None)) is not None:
         return f
 
     fname = f"serialize_{cls.__name__}"
     src, ns = make_to_dict_source_code(cls=cls, funcname=fname, skip_defaults=skip_defaults)
-    exec(src, ns)
-    return ns[fname]
+    exec(src.export(), ns)
+    func = ns[fname]
+    if include_src_in_docstring:
+        func.__doc__ += f"\n\n{src[2:]!s}\n"
+    return func
