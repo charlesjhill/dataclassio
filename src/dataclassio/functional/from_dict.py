@@ -24,15 +24,14 @@ def make_from_dict_source_code(
     funcname = funcname or f"deserialize_{cls.__name__}"
     ns: dict[str, tp.Any] = {"kls": cls}
 
-    fields = get_fields(cls)
+    fields = get_fields(cls, include_all=True)
     field_expressions: list[tuple[str, str, bool]] = []
     for f in fields:
-        # Check if this field is itself a dataclass.
-
         if not f.init:
             # init=False field. Don't try to read it in.
             continue
 
+        # Get the expression for parsing this field.
         field_expr = get_field_expression(
             f,
             serializer_data=SerializerData(

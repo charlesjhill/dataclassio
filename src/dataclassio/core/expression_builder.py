@@ -45,6 +45,10 @@ def build_expr(
         func_prefix: Prefix for dynamically created functions to pack or unpack embedded
             dataclasses.
     """
+    if isinstance(t, dcs.InitVar):
+        # Strip the InitVar wrapper
+        t = t.type
+
     origin, args = tp.get_origin(t), tp.get_args(t)
 
     stripped_type, is_optional = strip_optional(t)
@@ -87,7 +91,7 @@ def build_expr(
     if (origin is tp.Union or origin is types.UnionType) and (
         any(dcs.is_dataclass(a) for a in args)
     ):
-        msg = "Union types where any non-None argument is a dataclass are not currently supported."
+        msg = f"type: {t} with {origin=} and {args=} is not supported"
         raise RuntimeError(msg)
 
     return expr_str

@@ -1,8 +1,10 @@
+import pytest
+
 from dataclassio import EFS
 from dataclassio import _example_schemas as _sch
 
 
-class TestInitFields:
+class TestInitFalseFields:
     def test_init_false_field_from_dict(self):
         data = {"a": 1.0, "b": 2.0}
         inst = _sch.InitFalseDC.from_dict(data)
@@ -40,3 +42,27 @@ class TestInitFields:
         new_inst = _sch.InitFalseDC.from_dict(data, extra_field_strategy=EFS.CAPTURE)
         assert expected == new_inst
         assert new_inst.extra_fields == {}
+
+
+class TestInitOnlyFields:
+    def test_init_only_from_dict_all_fields(self):
+        data = {"value": 10.0, "unit": "seconds"}
+
+        actual = _sch.ImputedMetric.from_dict(data)
+        expected = _sch.ImputedMetric(**data)
+
+        assert actual == expected
+
+    def test_init_only_from_dict_excl_optional_fields(self):
+        data = {"unit": "seconds"}
+
+        actual = _sch.ImputedMetric.from_dict(data)
+        expected = _sch.ImputedMetric(**data)
+
+        assert actual == expected
+
+    def test_init_only_from_dict_missing_fields(self):
+        data = {"value": 10.0}
+
+        with pytest.raises(KeyError):
+            _sch.ImputedMetric.from_dict(data)

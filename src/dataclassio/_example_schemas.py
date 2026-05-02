@@ -1,6 +1,6 @@
 """Module with example schemas for testing or demonstrations."""
 
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 
 import typing_extensions as tp
 
@@ -415,6 +415,17 @@ class Dashboard(IOMixin):
 @dataclass
 class MaybeMetric(IOMixin):
     metric: Metric | None
+
+
+@dataclass
+class ImputedMetric(IOMixin):
+    unit: InitVar[str]
+    value: InitVar[float] = 5.0
+    metric: Metric = field(init=False)
+
+    def __post_init__(self, unit, value):
+        self.metric = Metric(value, unit)
+        return super().__post_init__()
 
 
 @dataclass

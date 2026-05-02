@@ -8,12 +8,15 @@ from ..types import NO_DEFAULT
 __all__ = ("get_fields", "field_has_default", "get_field_default", "strip_optional")
 
 
-def get_fields(cls: type) -> tuple[dcs.Field, ...]:
-    try:
-        return dcs.fields(cls)
-    except TypeError as e:
+def get_fields(cls: type, include_all=False) -> tuple[dcs.Field, ...]:
+    if not dcs.is_dataclass(cls):
         msg = f"Unsupported type: {cls}. Currently, just `dataclasses.dataclass` is supported."
-        raise TypeError(msg) from e
+        raise TypeError(msg)
+
+    if include_all:
+        return tuple(cls.__dataclass_fields__.values())
+
+    return dcs.fields(cls)
 
 
 def field_has_default(f: dcs.Field):
