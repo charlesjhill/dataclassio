@@ -4,6 +4,7 @@ import typing_extensions as tp
 
 from ..core import SerializerData, TextLines, field_has_default, get_field_expression, get_fields
 from ..types import EFS, DataclassInstance
+from ._shared import cache_source_code
 
 __all__ = (
     "make_from_dict_source_code",
@@ -84,12 +85,16 @@ def make_from_dict(
     if (f := _KNOWN_DESERIALIZERS.get((cls, extra_field_strategy), None)) is not None:
         return f
 
-    fname = f"deserialize_{cls.__name__}"
+    func_name = f"deserialize_{cls.__name__}"
+    file_name = f"dataclassio/generated/{func_name}_efs_{extra_field_strategy.value}.py"
     src, ns = make_from_dict_source_code(
-        cls, funcname=fname, extra_field_strategy=extra_field_strategy
+        cls, funcname=func_name, extra_field_strategy=extra_field_strategy
     )
-    exec(src.export(), ns)
-    func = ns[fname]
+
+    code_obj = cache_source_code(src, file_name)
+    exec(code_obj, ns)
+
+    func = ns[func_name]
     if include_src_in_docstring:
         func.__doc__ += f"\n\n{src[2:]!s}\n"
 

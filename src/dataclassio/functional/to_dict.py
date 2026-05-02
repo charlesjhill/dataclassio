@@ -8,6 +8,7 @@ from ..core import (
     get_fields,
 )
 from ..types import NO_DEFAULT, DataclassInstance
+from ._shared import cache_source_code
 from .from_dict import _EXTRA_FIELD_ATTR_NAME
 
 _KNOWN_SERIALIZERS: dict[tuple[type, bool], tp.Callable[[DataclassInstance], dict]] = {}
@@ -104,10 +105,15 @@ def make_to_dict(
     if (f := _KNOWN_SERIALIZERS.get((cls, skip_defaults), None)) is not None:
         return f
 
-    fname = f"serialize_{cls.__name__}"
-    src, ns = make_to_dict_source_code(cls=cls, funcname=fname, skip_defaults=skip_defaults)
-    exec(src.export(), ns)
-    func = ns[fname]
+    func_name = f"serialize_{cls.__name__}"
+
+    file_name = f"dataclassio/generated/{func_name}_skip_defaults_{skip_defaults!s}.py"
+    src, ns = make_to_dict_source_code(cls=cls, funcname=func_name, skip_defaults=skip_defaults)
+
+    code_obj = cache_source_code(src, file_name)
+
+    exec(code_obj, ns)
+    func = ns[func_name]
     if include_src_in_docstring:
         func.__doc__ += f"\n\n{src[2:]!s}\n"
     return func

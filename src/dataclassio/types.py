@@ -1,7 +1,7 @@
 import dataclasses as dcs
 import io
 import os
-from enum import Enum, auto
+from enum import Enum
 from pathlib import Path
 
 import typing_extensions as tp
@@ -20,9 +20,9 @@ PathOrHandle: tp.TypeAlias = PathLike | io.IOBase
 
 
 class ExtraFieldStrategy(Enum):
-    STRICT = auto()
-    IGNORE = auto()
-    CAPTURE = auto()
+    STRICT = "strict"
+    IGNORE = "ignore"
+    CAPTURE = "capture"
 
 
 EFS = ExtraFieldStrategy
