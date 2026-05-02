@@ -1,9 +1,22 @@
 import dataclasses as dcs
+import io
+import os
 from enum import Enum, auto
+from pathlib import Path
 
 import typing_extensions as tp
 
-__all__ = ("ExtraFieldStrategy", "EFS", "DataclassInstance", "NO_DEFAULT")
+__all__ = (
+    "PathLike",
+    "PathOrHandle",
+    "ExtraFieldStrategy",
+    "EFS",
+    "DataclassInstance",
+    "NO_DEFAULT",
+)
+
+PathLike: tp.TypeAlias = str | bytes | Path | os.PathLike
+PathOrHandle: tp.TypeAlias = PathLike | io.IOBase
 
 
 class ExtraFieldStrategy(Enum):

@@ -1,1 +1,5 @@
 line-length = 99
+
+[lint]
+# Don't remove unused imports automatically
+unfixable = ["F401"]
