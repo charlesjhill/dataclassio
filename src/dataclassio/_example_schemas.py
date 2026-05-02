@@ -1,5 +1,6 @@
 """Module with example schemas for testing or demonstrations."""
 
+import enum
 from dataclasses import InitVar, dataclass, field
 
 import typing_extensions as tp
@@ -437,3 +438,15 @@ class InitFalseDC(IOMixin):
     def __post_init__(self):
         self.c = self.a + self.b
         return super().__post_init__()
+
+
+class Role(enum.Enum):
+    ADMIN = "admin"
+    EDITOR = "editor"
+    VIEWER = "viewer"
+
+
+@dataclass
+class Team(IOMixin):
+    team_name: str
+    access_level: Role

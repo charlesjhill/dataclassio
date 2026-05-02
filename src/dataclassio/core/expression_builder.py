@@ -1,4 +1,5 @@
 import dataclasses as dcs
+import enum
 import types
 
 import typing_extensions as tp
@@ -50,8 +51,9 @@ def build_expr(
         t = t.type
 
     origin, args = tp.get_origin(t), tp.get_args(t)
-
     stripped_type, is_optional = strip_optional(t)
+
+    # 1. Handle composite types (e.g., Optionals and containers)
     if is_optional:
         inner_expr = build_expr(
             stripped_type, expr_str, serializer_data=serializer_data, func_prefix=func_prefix
@@ -59,15 +61,6 @@ def build_expr(
         if inner_expr == expr_str:
             return expr_str
         return f"({inner_expr} if {expr_str} is not None else None)"
-
-    if dcs.is_dataclass(t):
-        cache_key = (t, *serializer_data.cache_args)
-        if cache_key not in serializer_data.registry:
-            serializer_data.registry[cache_key] = None  # Refuse to recurse.
-            serializer_data.registry[cache_key] = serializer_data.maker_func(t)
-        fname = f"{func_prefix}_{t.__name__}"
-        serializer_data.namespace[fname] = serializer_data.registry[cache_key]
-        return f"{fname}({expr_str})"
 
     if origin in (list, tp.List):
         inner_type = args[0] if args else tp.Any
@@ -88,10 +81,34 @@ def build_expr(
             return expr_str
         return f"{{{k_expr}: {v_expr} for k, v in {expr_str}.items()}}"
 
+    # 2. Handle atoms (note that we don't recurse into `build_expr`)
+    if dcs.is_dataclass(t):
+        cache_key = (t, *serializer_data.cache_args)
+        if cache_key not in serializer_data.registry:
+            serializer_data.registry[cache_key] = None  # Refuse to recurse.
+            serializer_data.registry[cache_key] = serializer_data.maker_func(t)
+        fname = f"{func_prefix}_{t.__name__}"
+        serializer_data.namespace[fname] = serializer_data.registry[cache_key]
+        return f"{fname}({expr_str})"
+
+    if isinstance(t, type) and issubclass(t, enum.Enum):
+        # For enum types, convert to the Enum.
+        if func_prefix == "serialize":
+            # To Dict
+            return f"{expr_str}.value"
+
+        # From Dict
+        enum_name = t.__name__
+        serializer_data.namespace[enum_name] = t  # Ensure the Enum type is in the namespace.
+
+        # N.B. Doing `v if isinstance(v := {expr_str}, Enum) else Enum(v)` is slower than this.
+        return f"{enum_name}({expr_str})"
+
+    # 3. Fallbacks
     if (origin is tp.Union or origin is types.UnionType) and (
         any(dcs.is_dataclass(a) for a in args)
     ):
-        msg = f"type: {t} with {origin=} and {args=} is not supported"
+        msg = f"type: {t} with {origin=} and {args=}, generated via {expr_str=} is not supported"
         raise RuntimeError(msg)
 
     return expr_str
