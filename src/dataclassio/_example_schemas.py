@@ -415,3 +415,14 @@ class Dashboard(IOMixin):
 @dataclass
 class MaybeMetric(IOMixin):
     metric: Metric | None
+
+
+@dataclass
+class InitFalseDC(IOMixin):
+    a: float
+    b: float
+    c: float = field(init=False)
+
+    def __post_init__(self):
+        self.c = self.a + self.b
+        return super().__post_init__()

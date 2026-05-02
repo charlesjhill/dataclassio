@@ -28,6 +28,11 @@ def make_from_dict_source_code(
     field_expressions: list[tuple[str, str, bool]] = []
     for f in fields:
         # Check if this field is itself a dataclass.
+
+        if not f.init:
+            # init=False field. Don't try to read it in.
+            continue
+
         field_expr = get_field_expression(
             f,
             serializer_data=SerializerData(
@@ -107,6 +112,8 @@ def _handle_extra_fields(
         return lines
 
     # Precompute a lookup table with the known fields for this class.
+    #  N.B. This will include init=False fields, thus preventing them from being counted
+    #       as an extra.
     field_names_set_varname = "_KNOWN_FIELDS"
     ns[field_names_set_varname] = frozenset(f.name for f in fields)
 
