@@ -108,6 +108,57 @@ class CocoImage(IOMixin):
         inst = cls(**kw)
         return inst
 
+    @classmethod
+    def fast_from_dict(cls, dikt):
+        """Deserialize a CocoImage instance from a dictionary."""
+        try:
+            v_id = dikt["id"]
+        except KeyError as exc:
+            raise KeyError(
+                f"'id' is a required attribute for CocoImage, but was missing from {dikt=}."
+            ) from exc
+
+        try:
+            v_file_name = dikt["file_name"]
+        except KeyError as exc:
+            raise KeyError(
+                f"'file_name' is a required attribute for CocoImage, but was missing from {dikt=}."
+            ) from exc
+
+        if "width" in dikt:
+            v_width = dikt["width"]
+        else:
+            v_width = None
+
+        if "height" in dikt:
+            v_height = dikt["height"]
+        else:
+            v_height = None
+
+        if "license" in dikt:
+            v_license = dikt["license"]
+        else:
+            v_license = None
+
+        if "flickr_url" in dikt:
+            v_flickr_url = dikt["flickr_url"]
+        else:
+            v_flickr_url = None
+
+        if "coco_url" in dikt:
+            v_coco_url = dikt["coco_url"]
+        else:
+            v_coco_url = None
+
+        if "date_captured" in dikt:
+            v_date = dikt["date_captured"]
+        else:
+            v_date = None
+
+        return cls(
+            v_id, v_file_name, v_width, v_height, v_license, v_flickr_url, v_coco_url, v_date
+        )
+
     def manual_to_dict(self, skip_defaults=False):
         """Serialize a CocoImage instance into a dictionary."""
         if skip_defaults:
@@ -289,6 +340,53 @@ class CocoAnnotation(IOMixin):
         inst = cls(**kw)
         return inst
 
+    @classmethod
+    def fast_from_dict(cls, dikt):
+        """Deserialize a CocoAnnotation instance from a dictionary."""
+        try:
+            v_id = dikt["id"]
+        except KeyError as exc:
+            raise KeyError(
+                f"'id' is a required attribute for CocoAnnotation, but was missing from {dikt=}."
+            ) from exc
+
+        try:
+            v_image_id = dikt["image_id"]
+        except KeyError as exc:
+            raise KeyError(
+                f"'image_id' is a required attribute for CocoAnnotation, but was missing from {dikt=}."
+            ) from exc
+
+        try:
+            v_category_id = dikt["category_id"]
+        except KeyError as exc:
+            raise KeyError(
+                f"'category_id' is a required attribute for CocoAnnotation, but was missing from {dikt=}."
+            ) from exc
+
+        try:
+            v_bbox = dikt["bbox"]
+        except KeyError as exc:
+            raise KeyError(
+                f"'bbox' is a required attribute for CocoAnnotation, but was missing from {dikt=}."
+            ) from exc
+
+        if "area" in dikt:
+            v_area = dikt["area"]
+        else:
+            v_area = None
+
+        if "iscrowd" in dikt:
+            v_iscrowd = dikt["iscrowd"]
+        else:
+            v_iscrowd = 0
+
+        if "segmentation" in dikt:
+            v_segmentation = dikt["segmentation"]
+        else:
+            v_segmentation = None
+        return cls(v_id, v_image_id, v_category_id, v_bbox, v_area, v_iscrowd, v_segmentation)
+
     def manual_to_dict(self, skip_defaults=False):
         """Serialize a CocoAnnotation instance into a dictionary."""
         if skip_defaults:
@@ -327,6 +425,9 @@ class Coco(IOMixin):
     categories: list[CocoCategory] = field(default_factory=list)
     licenses: list[CocoLicense] = field(default_factory=list)
 
+    def __repr__(self) -> str:
+        return f"<Coco images={len(self.images)} annotations={len(self.annotations)} categories={len(self.categories)}>"
+
     @classmethod
     def manual_from_dict(cls, dikt):
         """Deserialize a Coco instance from a dictionary."""
@@ -343,6 +444,44 @@ class Coco(IOMixin):
             kw["licenses"] = [CocoLicense.manual_from_dict(d) for d in dikt["licenses"]]
         inst = cls(**kw)
         return inst
+
+    @classmethod
+    def fast_from_dict(
+        cls,
+        dikt,
+        _cinfo=CocoInfo.from_dict,
+        _cinfo_cls=CocoInfo,
+        _cimage=CocoImage.fast_from_dict,
+        _cannot=CocoAnnotation.fast_from_dict,
+        _ccategory=CocoCategory.from_dict,
+        _clic=CocoLicense.from_dict,
+    ):
+        if "info" in dikt:
+            c_info = _cinfo(dikt["info"])
+        else:
+            c_info = _cinfo_cls()
+
+        if "images" in dikt:
+            c_images = [_cimage(d) for d in dikt["images"]]
+        else:
+            c_images = []
+
+        if "annotations" in dikt:
+            c_annotations = [_cannot(d) for d in dikt["annotations"]]
+        else:
+            c_annotations = []
+
+        if "categories" in dikt:
+            c_categories = [_ccategory(d) for d in dikt["categories"]]
+        else:
+            c_categories = []
+
+        if "licenses" in dikt:
+            c_licences = [_clic(d) for d in dikt["licenses"]]
+        else:
+            c_licences = []
+
+        return cls(c_info, c_images, c_annotations, c_categories, c_licences)
 
     def manual_to_dict(self, skip_defaults=False):
         """Serialize a Coco instance into a dictionary."""
