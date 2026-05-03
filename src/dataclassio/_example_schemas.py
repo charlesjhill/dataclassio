@@ -402,7 +402,7 @@ class CocoAnnotation(IOMixin):
                 dikt["iscrowd"] = v
             if (v := self.segmentation) is not None:
                 dikt["segmentation"] = v
-            dikt.update(getattr(self, "_extra_fields", {}))
+            dikt.update(self.extra_fields)
         else:
             dikt = {
                 "id": self.id,
@@ -487,15 +487,17 @@ class Coco(IOMixin):
         """Serialize a Coco instance into a dictionary."""
         if skip_defaults:
             dikt = {}
-            if (v := CocoInfo.manual_to_dict(self.info)) != CocoInfo():
+            if (v := CocoInfo.manual_to_dict(self.info, skip_defaults=True)) != CocoInfo():
                 dikt["info"] = v
-            if v := [CocoImage.manual_to_dict(d) for d in self.images]:
+            if v := [CocoImage.manual_to_dict(d, skip_defaults=True) for d in self.images]:
                 dikt["images"] = v
-            if v := [CocoAnnotation.manual_to_dict(d) for d in self.annotations]:
+            if v := [
+                CocoAnnotation.manual_to_dict(d, skip_defaults=True) for d in self.annotations
+            ]:
                 dikt["annotations"] = v
-            if v := [CocoCategory.manual_to_dict(d) for d in self.categories]:
+            if v := [CocoCategory.manual_to_dict(d, skip_defaults=True) for d in self.categories]:
                 dikt["categories"] = v
-            if v := [CocoLicense.manual_to_dict(d) for d in self.licenses]:
+            if v := [CocoLicense.manual_to_dict(d, skip_defaults=True) for d in self.licenses]:
                 dikt["licenses"] = v
             dikt.update(self.extra_fields)
         else:
