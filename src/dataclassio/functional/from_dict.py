@@ -1,8 +1,16 @@
 import dataclasses as dcs
+import uuid
 
 import typing_extensions as tp
 
-from ..core import SerializerData, TextLines, field_has_default, get_field_expression, get_fields
+from ..core import (
+    SerializerData,
+    TextLines,
+    field_has_default,
+    get_field_expression,
+    get_fields,
+    parse_default_expression,
+)
 from ..types import EFS, DataclassInstance
 from ._shared import cache_source_code
 
@@ -16,6 +24,34 @@ _EXTRA_FIELD_ATTR_NAME = "_extra_fields"
 _SPACER = "  "
 
 
+class FieldSpec(tp.NamedTuple):
+    field: dcs.Field
+    var_name: str
+    expr: str
+    has_default: bool
+
+    @property
+    def name(self):
+        return self.field.name
+
+    @property
+    def kw_only(self):
+        return self.field.kw_only
+
+
+# TODO: Have this check the namespace before appending the gobbledygook characters.
+def _make_variable_name(
+    base_name: str,
+    prefix: str = "_dio_",
+    include_suffix=True,
+):
+    if not include_suffix:
+        return f"{prefix}{base_name}"
+
+    random_chars = uuid.uuid4().hex[:8]
+    return f"{prefix}{base_name}_{random_chars}"
+
+
 def make_from_dict_source_code(
     cls: type[DataclassInstance],
     funcname: str = "",
@@ -23,10 +59,11 @@ def make_from_dict_source_code(
 ) -> tuple[TextLines, dict[str, tp.Any]]:
     """Generate the source code and necessary namespace for a from_dict deserialization method."""
     funcname = funcname or f"deserialize_{cls.__name__}"
-    ns: dict[str, tp.Any] = {"kls": cls}
+    cls_factory_name = _make_variable_name("cls")
+    ns: dict[str, tp.Any] = {cls_factory_name: cls}
 
     fields = get_fields(cls, include_all=True)
-    field_expressions: list[tuple[str, str, bool]] = []
+    field_data: list[FieldSpec] = []
     for f in fields:
         if not f.init:
             # init=False field. Don't try to read it in.
@@ -43,35 +80,48 @@ def make_from_dict_source_code(
             ),
             direction="from_dict",
         )
-        field_expressions.append((f.name, field_expr, field_has_default(f)))
+        field_data.append(
+            FieldSpec(f, _make_variable_name(f.name), field_expr, field_has_default(f))
+        )
 
     # Assemble the final function body
     lines = TextLines(spacer=_SPACER)
     with lines.indent(f"def {funcname}(dikt):"):
         lines.append(f'"""Deserialize a {cls.__name__} instance from a dictionary."""')
-        lines.append("kw = {}")
-        for fname, field_expr, has_default in field_expressions:
-            if has_default:
-                # a little trickier. We want to add to kw if and only if it exists in the dikt
-                with lines.indent(f"if {fname!r} in dikt:"):
-                    lines.append(f"kw[{fname!r}] = {field_expr}")
-            else:
-                err_msg = f"{fname!r} is a required attribute for {cls.__name__}, but was missing from {{dikt=}}."
+        for fs in field_data:
+            if not fs.has_default:
+                # Since there is no default, wrap in a try/except.
+                err_msg = f"{fs.name!r} is a required attribute for {cls.__name__}, but was missing from {{dikt=}}."
                 with lines.indent("try:"):
-                    lines.append(f"kw[{fname!r}] = {field_expr}")
-                with lines.indent("except KeyError as exc:"):
-                    # Note the f-string
-                    lines.append(f"raise KeyError(f{err_msg!r}) from exc")
+                    lines.append(f"{fs.var_name} = {fs.expr}")
+                with lines.indent("except KeyError as _exc:"):
+                    # Note the f-string!
+                    lines.append(f"raise KeyError(f{err_msg!r}) from _exc")
+            else:
+                # There is a default value. Extract its value in the else
+                with lines.indent(f"if {fs.name!r} in dikt:"):
+                    lines.append(f"{fs.var_name} = {fs.expr}")
+                with lines.indent("else:"):
+                    default_expr = parse_default_expression(fs.field, ns)
+                    lines.append(f"{fs.var_name} = {default_expr}")
+
+        # Now we need to build the constructor string. At this point, we have a local variable
+        #  for every initializable argument. We need to do two things:
+        # 1. Get these in the same order as the __init__ function
+        # 2. Ensure we are using keyword-argument for kw-only fields.
+
+        # Let's start with something easier: Use explicit keyword-based fields for everything!
+        data_str = ", ".join(f"{fs.name}={fs.var_name}" for fs in field_data)
 
         extras = _handle_extra_fields(
             fields, extra_field_strategy, ns=ns, attribute_name=_EXTRA_FIELD_ATTR_NAME
         )
         if extras:
-            lines.append("inst = kls(**kw)")
+            lines.append(f"inst = {cls_factory_name}({data_str})")
             lines.extend(extras)
             lines.append("return inst")
         else:
-            lines.append("return kls(**kw)")
+            lines.append(f"return {cls_factory_name}({data_str})")
 
     return lines, ns
 

@@ -3,11 +3,12 @@ import typing_extensions as tp
 from ..core import (
     SerializerData,
     TextLines,
-    get_field_default,
+    field_has_default,
     get_field_expression,
     get_fields,
+    parse_default_expression,
 )
-from ..types import NO_DEFAULT, DataclassInstance
+from ..types import DataclassInstance
 from ._shared import cache_source_code
 from .from_dict import _EXTRA_FIELD_ATTR_NAME
 
@@ -50,23 +51,15 @@ def make_to_dict_source_code(
 
         # We need an explicit check for `has_default` since `get_default` cannot distinguish between
         # "no default" and "default=None".
-        if skip_defaults and (field_default := get_field_default(f)) is not NO_DEFAULT:
+        if skip_defaults and field_has_default(f):
             # Add a hardcoded gate that checks if we have a default value. If so, don't
             #  add anything to the dict.
-            comparator = "is not" if field_default is None else "!="
+            default_expression = parse_default_expression(f, ns, precompute_factory=False)
+            comparator = "is not" if default_expression == "None" else "!="
 
-            # TODO: Consider adding handler for boolean cases?
-            if field_default is None or isinstance(field_default, (int, float, str)):
-                ns_key = repr(field_default)
-            elif field_default == []:
-                ns_key = "[]"
-            elif field_default == {}:
-                ns_key = "{}"
-            else:
-                ns_key = f"{f.name}_default"
-                ns[ns_key] = field_default
-
-            with default_check_lines.indent(f"if inst.{f.name} {comparator} {ns_key}:"):
+            with default_check_lines.indent(
+                f"if inst.{f.name} {comparator} {default_expression}:"
+            ):
                 default_check_lines.append(f"dikt[{f.name!r}] = {field_expr}")
         else:
             # Either this field has no default, or we are keeping all values. This easy.
