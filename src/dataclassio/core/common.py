@@ -1,5 +1,6 @@
 import dataclasses as dcs
 import types
+import uuid
 
 import typing_extensions as tp
 
@@ -11,6 +12,7 @@ __all__ = (
     "get_field_default",
     "strip_optional",
     "parse_default_expression",
+    "make_variable_name",
 )
 
 
@@ -58,8 +60,9 @@ def parse_default_expression(f: dcs.Field, namespace: tp.MutableMapping, precomp
         `NO_DEFAULT` sentinel.
     """
 
-    def _register(val: tp.Any, suffix: str, is_call=False):
-        ns_key = f"_dio_{f.name}_{suffix}"
+    def _register(val: tp.Any, is_call=False):
+        suffix = "factory" if is_call else "default"
+        ns_key = make_variable_name(f"{f.name}_{suffix}", ns=namespace)
         namespace[ns_key] = val
         return f"{ns_key}()" if is_call else ns_key
 
@@ -72,7 +75,7 @@ def parse_default_expression(f: dcs.Field, namespace: tp.MutableMapping, precomp
 
     if f.default_factory is not dcs.MISSING:
         if not precompute_factory:
-            return _register(f.default_factory, "default_factory", is_call=True)
+            return _register(f.default_factory, is_call=True)
         value = f.default_factory()
     elif f.default is not dcs.MISSING:
         value = f.default
@@ -81,7 +84,7 @@ def parse_default_expression(f: dcs.Field, namespace: tp.MutableMapping, precomp
 
     if _is_atom(value):
         return repr(value)
-    return _register(value, "default")
+    return _register(value, False)
 
 
 def strip_optional(t: tp.TypeForm) -> tuple[tp.Any, bool]:
@@ -105,3 +108,21 @@ def strip_optional(t: tp.TypeForm) -> tuple[tp.Any, bool]:
 
     # len(non_none_args) > 1
     return tp.Union[non_none_args], True
+
+
+def make_variable_name(
+    base_name: str,
+    prefix: str = "",
+    ns: tp.Iterable[str] | None = None,
+):
+    """Generate a variable name that avoids shadowing any existing variable names."""
+    var_name = f"{prefix}{base_name}"
+
+    if not ns:
+        return var_name
+
+    while var_name in ns:
+        random_chars = uuid.uuid4().hex[:2]
+        var_name = f"{var_name}_{random_chars}"
+
+    return var_name

@@ -1,6 +1,7 @@
 from .common import field_has_default as field_has_default
 from .common import get_field_default as get_field_default
 from .common import get_fields as get_fields
+from .common import make_variable_name as make_variable_name
 from .common import parse_default_expression as parse_default_expression
 from .common import strip_optional as strip_optional
 from .expression_builder import SerializerData as SerializerData

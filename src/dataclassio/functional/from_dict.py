@@ -1,5 +1,5 @@
 import dataclasses as dcs
-import uuid
+import inspect
 
 import typing_extensions as tp
 
@@ -9,6 +9,7 @@ from ..core import (
     field_has_default,
     get_field_expression,
     get_fields,
+    make_variable_name,
     parse_default_expression,
 )
 from ..types import EFS, DataclassInstance
@@ -39,19 +40,6 @@ class FieldSpec(tp.NamedTuple):
         return self.field.kw_only
 
 
-# TODO: Have this check the namespace before appending the gobbledygook characters.
-def _make_variable_name(
-    base_name: str,
-    prefix: str = "_dio_",
-    include_suffix=True,
-):
-    if not include_suffix:
-        return f"{prefix}{base_name}"
-
-    random_chars = uuid.uuid4().hex[:8]
-    return f"{prefix}{base_name}_{random_chars}"
-
-
 def make_from_dict_source_code(
     cls: type[DataclassInstance],
     funcname: str = "",
@@ -59,11 +47,13 @@ def make_from_dict_source_code(
 ) -> tuple[TextLines, dict[str, tp.Any]]:
     """Generate the source code and necessary namespace for a from_dict deserialization method."""
     funcname = funcname or f"deserialize_{cls.__name__}"
-    cls_factory_name = _make_variable_name("cls")
+    cls_factory_name = make_variable_name("cls")
     ns: dict[str, tp.Any] = {cls_factory_name: cls}
 
     fields = get_fields(cls, include_all=True)
-    field_data: list[FieldSpec] = []
+    field_data: dict[str, FieldSpec] = {}
+
+    current_variable_names: set = {cls_factory_name, "dikt", "_exc"}
     for f in fields:
         if not f.init:
             # init=False field. Don't try to read it in.
@@ -80,15 +70,22 @@ def make_from_dict_source_code(
             ),
             direction="from_dict",
         )
-        field_data.append(
-            FieldSpec(f, _make_variable_name(f.name), field_expr, field_has_default(f))
+
+        var_name = make_variable_name(f.name, ns=current_variable_names.union(ns))
+        current_variable_names.add(var_name)
+
+        field_data[f.name] = FieldSpec(
+            f,
+            var_name,
+            field_expr,
+            field_has_default(f),
         )
 
     # Assemble the final function body
     lines = TextLines(spacer=_SPACER)
     with lines.indent(f"def {funcname}(dikt):"):
         lines.append(f'"""Deserialize a {cls.__name__} instance from a dictionary."""')
-        for fs in field_data:
+        for fs in field_data.values():
             if not fs.has_default:
                 # Since there is no default, wrap in a try/except.
                 err_msg = f"{fs.name!r} is a required attribute for {cls.__name__}, but was missing from {{dikt=}}."
@@ -109,9 +106,18 @@ def make_from_dict_source_code(
         #  for every initializable argument. We need to do two things:
         # 1. Get these in the same order as the __init__ function
         # 2. Ensure we are using keyword-argument for kw-only fields.
-
-        # Let's start with something easier: Use explicit keyword-based fields for everything!
-        data_str = ", ".join(f"{fs.name}={fs.var_name}" for fs in field_data)
+        init_parts = []
+        for param in inspect.signature(cls).parameters.values():
+            fs = field_data[param.name]
+            if fs.kw_only:
+                init_parts.append(f"{fs.name}={fs.var_name}")
+            else:
+                assert param.kind not in (
+                    inspect.Parameter.KEYWORD_ONLY,
+                    inspect.Parameter.VAR_KEYWORD,
+                )
+                init_parts.append(fs.var_name)
+        data_str = ", ".join(init_parts)
 
         extras = _handle_extra_fields(
             fields, extra_field_strategy, ns=ns, attribute_name=_EXTRA_FIELD_ATTR_NAME
