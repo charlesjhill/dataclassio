@@ -1,11 +1,19 @@
 import dataclasses as dcs
 import types
+import uuid
 
 import typing_extensions as tp
 
 from ..types import NO_DEFAULT
 
-__all__ = ("get_fields", "field_has_default", "get_field_default", "strip_optional")
+__all__ = (
+    "get_fields",
+    "field_has_default",
+    "get_field_default",
+    "strip_optional",
+    "parse_default_expression",
+    "make_variable_name",
+)
 
 
 def get_fields(cls: type, include_all=False) -> tuple[dcs.Field, ...]:
@@ -14,7 +22,9 @@ def get_fields(cls: type, include_all=False) -> tuple[dcs.Field, ...]:
         raise TypeError(msg)
 
     if include_all:
-        return tuple(cls.__dataclass_fields__.values())
+        return tuple(
+            v for v in cls.__dataclass_fields__.values() if v._field_type.name != "_FIELD_CLASSVAR"
+        )
 
     return dcs.fields(cls)
 
@@ -32,6 +42,49 @@ def get_field_default(f: dcs.Field, *, call_factory: bool = True):
         return f.default_factory() if call_factory else f.default_factory
 
     return NO_DEFAULT
+
+
+def parse_default_expression(f: dcs.Field, namespace: tp.MutableMapping, precompute_factory=False):
+    """Get an expression (and populate the namespace) with the default value for a field.
+
+    Args:
+        f: The field to parse.
+        namespace: A mutable mapping to store precomputed default values.
+        precompute_factory: Flag to precompute the value of a factory function. If true,
+            the factory is called once at compile time and its value is stored for use later in
+            the namespace. If False, the returned expression will invoke the factory function
+            at runtime.
+
+    Returns:
+        A string if there if the field had a default or default_factory. Otherwise, the
+        `NO_DEFAULT` sentinel.
+    """
+
+    def _register(val: tp.Any, is_call=False):
+        suffix = "factory" if is_call else "default"
+        ns_key = make_variable_name(f"{f.name}_{suffix}", ns=namespace)
+        namespace[ns_key] = val
+        return f"{ns_key}()" if is_call else ns_key
+
+    def _is_atom(x):
+        return x is None or isinstance(x, (int, float, str, bool))
+
+    literal_map = {list: "[]", dict: "{}", tuple: "()"}
+    if f.default_factory in literal_map:
+        return literal_map[f.default_factory]
+
+    if f.default_factory is not dcs.MISSING:
+        if not precompute_factory:
+            return _register(f.default_factory, is_call=True)
+        value = f.default_factory()
+    elif f.default is not dcs.MISSING:
+        value = f.default
+    else:
+        return NO_DEFAULT
+
+    if _is_atom(value):
+        return repr(value)
+    return _register(value, False)
 
 
 def strip_optional(t: tp.TypeForm) -> tuple[tp.Any, bool]:
@@ -55,3 +108,21 @@ def strip_optional(t: tp.TypeForm) -> tuple[tp.Any, bool]:
 
     # len(non_none_args) > 1
     return tp.Union[non_none_args], True
+
+
+def make_variable_name(
+    base_name: str,
+    prefix: str = "",
+    ns: tp.Iterable[str] | None = None,
+):
+    """Generate a variable name that avoids shadowing any existing variable names."""
+    var_name = f"{prefix}{base_name}"
+
+    if not ns:
+        return var_name
+
+    while var_name in ns:
+        random_chars = uuid.uuid4().hex[:2]
+        var_name = f"{var_name}_{random_chars}"
+
+    return var_name
