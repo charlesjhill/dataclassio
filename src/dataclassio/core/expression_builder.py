@@ -91,7 +91,7 @@ def build_expr(
             serializer_data.registry[cache_key] = None  # Refuse to recurse.
             serializer_data.registry[cache_key] = serializer_data.maker_func(t)
 
-        fname = make_variable_name(f"{func_prefix}_{t.__name__}", ns=serializer_data.namespace)
+        fname = make_variable_name(f"{func_prefix}_{t.__name__}")
         serializer_data.namespace[fname] = serializer_data.registry[cache_key]
         return f"{fname}({expr_str})"
 
@@ -114,7 +114,7 @@ def build_expr(
             return f"({expr_str}).isoformat()"
 
         # from dict
-        fname = make_variable_name("fromisoformat", ns=serializer_data.namespace)
+        fname = make_variable_name("_fromisoformat")
         serializer_data.namespace[fname] = datetime.fromisoformat
         return f"{fname}({expr_str})"
 
