@@ -1,15 +1,31 @@
 # DataclassIO
 
-`DataclassIO` is a simple package to enable nested dictionary conversion of dataclass hierarchies with explicit support for handling extra fields.
+`DataclassIO` is a simple package to enable nested dictionary conversion of dataclass hierarchies with explicit support for handling extra fields round trip, and exluding default-valued fields on export.
 
 This project is in its early stages, but it is has minimum viable functionality for my use-cases.
 
-Up next would be:
+## Supported Types and Constructs
 
-- [ ] Supporting unions of Dataclasses (incl. discriminated unions)
-- [ ] Improving docs.
-- [x] JSON import/export in `IOMixin`.
-- [ ] Bug hunting and edge cases around the dataclass spec and typing system.
+Currently, the following types are supported:
+
+- Optional expressions: `Optional[T]`, `T | None`, or `Union[T, None]`
+- Embedded dataclasses: `DataclassType` (exports as `dict`)
+- Lists: `list[T]`
+- Dicts: `dict[TK, TV]`
+- Enums: `Enum` (exports as `str`)
+- Datetimes: `datetime` (imports/exports to ISO-8601 string)
+- fundamental types: e.g., `int`, `float`, `str`, `bool`
+
+Where the `T`, `TK`, and `TV` type variables may be any other type listed in the table.
+For instance, `dict[str, list[DataclassType | None]]` is supported.
+
+The library also supports common dataclass features:
+
+- Default values and default factories: `field(default=..., default_factory=...)`
+- Init-only and `init=False` fields
+  - Note that `init=False` fields are still exported as usual.
+- `kw_only` fields and dataclasses.
+- Class variables (no impact).
 
 ## Example
 

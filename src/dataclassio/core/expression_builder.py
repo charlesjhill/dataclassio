@@ -1,11 +1,12 @@
 import dataclasses as dcs
 import enum
 import types
+from datetime import datetime
 
 import typing_extensions as tp
 
 from ..types import DataclassInstance
-from .common import strip_optional
+from .common import make_variable_name, strip_optional
 
 __all__ = ("SerializerData", "build_expr", "get_field_expression")
 
@@ -33,6 +34,8 @@ def build_expr(
     - Embedded dataclasses: `DataclassType`
     - Lists: `list[T]`
     - Dicts: `dict[TK, TV]`
+    - Enums: `Enum`
+    - Datetimes
     - fundamental types: `int`, `float`, `str`, `bool`
 
     Where the `T`, `TK`, and `TV` type variables may be any other type listed in the table.
@@ -87,7 +90,8 @@ def build_expr(
         if cache_key not in serializer_data.registry:
             serializer_data.registry[cache_key] = None  # Refuse to recurse.
             serializer_data.registry[cache_key] = serializer_data.maker_func(t)
-        fname = f"{func_prefix}_{t.__name__}"
+
+        fname = make_variable_name(f"{func_prefix}_{t.__name__}", ns=serializer_data.namespace)
         serializer_data.namespace[fname] = serializer_data.registry[cache_key]
         return f"{fname}({expr_str})"
 
@@ -103,6 +107,16 @@ def build_expr(
 
         # N.B. Doing `v if isinstance(v := {expr_str}, Enum) else Enum(v)` is slower than this.
         return f"{enum_name}({expr_str})"
+
+    if t is datetime:
+        if func_prefix == "serialize":
+            # To dict
+            return f"({expr_str}).isoformat()"
+
+        # from dict
+        fname = make_variable_name("fromisoformat", ns=serializer_data.namespace)
+        serializer_data.namespace[fname] = datetime.fromisoformat
+        return f"{fname}({expr_str})"
 
     # 3. Fallbacks
     if (origin is tp.Union or origin is types.UnionType) and (
