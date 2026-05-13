@@ -55,7 +55,7 @@ class TestDictLiterals:
         actual = _schemas.User.from_dict(dikt_with_admin)
         expected = _schemas.User(2, "Bob", True)
         assert actual == expected
-        assert actual.to_dict(True) == dikt_with_admin
+        assert actual.to_dict(skip_defaults=True) == dikt_with_admin
 
     def test_plain_containers(self):
         dikt = {"id": 1, "name": "Alice", "metadata": {"k1": "k2"}, "data": [1, 2, 3]}

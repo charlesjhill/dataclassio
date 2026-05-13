@@ -5,8 +5,9 @@ from datetime import datetime
 
 import typing_extensions as tp
 
+from ..config import NoValue, _TotalDioOptions
 from ..types import DataclassInstance
-from .common import make_variable_name, strip_optional
+from .common import get_fields, make_variable_name, strip_optional
 
 __all__ = ("SerializerData", "build_expr", "get_field_expression")
 
@@ -17,7 +18,8 @@ class SerializerData(tp.NamedTuple):
     registry: tp.MutableMapping
     namespace: tp.MutableMapping
     maker_func: tp.Callable[[DataclassInstance], tp.Callable]
-    cache_args: tuple
+    cache_key: tuple[tp.Hashable, str]
+    options: _TotalDioOptions
 
 
 def build_expr(
@@ -84,14 +86,78 @@ def build_expr(
             return expr_str
         return f"{{{k_expr}: {v_expr} for k, v in {expr_str}.items()}}"
 
+    if (origin is tp.Union or origin is types.UnionType) and any(
+        dcs.is_dataclass(a) for a in args
+    ):
+        if not all(dcs.is_dataclass(a) for a in args):
+            msg = (
+                f"type={t}, generated via {expr_str=} is not supported."
+                " Union types with any dataclass options must be _all_ dataclasses."
+            )
+            raise RuntimeError(msg)
+        # check the field options.
+        discriminator = serializer_data.options["discriminator"]
+        if discriminator is NoValue:
+            msg = (
+                f"type={t}, generated via {expr_str=} is not supported."
+                " A discriminator field was not provided."
+            )
+        assert isinstance(discriminator, str)
+
+        # base case
+        if func_prefix == "deserialize":
+            # from_dict
+            inner_expr = f"{expr_str}[{discriminator!r}]"
+        else:
+            # to_dict
+            inner_expr = f"{expr_str}.{discriminator!s}"
+
+        # build list of types:
+        maker_map_data: dict[str, tp.Any] = {}
+        for cls_option in args:
+            fields = [f for f in get_fields(cls_option) if f.name == discriminator]
+            if not fields:
+                msg = (
+                    f"type={t}, generated via {expr_str=} is not supported."
+                    f"Union option {cls_option} does not have a field with the name {discriminator}."
+                )
+                raise RuntimeError(msg)
+            # get the type.
+            f_type = fields[0].type
+            discrim_origin = tp.get_origin(f_type)
+            discrim_args = tp.get_args(f_type)
+            if discrim_origin is not tp.Literal or not all(
+                isinstance(x, str) for x in discrim_args
+            ):
+                msg = (
+                    f"type={t}, generated via {expr_str=} is not supported."
+                    f"Union option {cls_option} has a field with name {discriminator}, but it is not a Literal with string arguments."
+                )
+                raise RuntimeError(msg)
+            maker_func = serializer_data.maker_func(cls_option)
+            for arg_name in discrim_args:
+                if arg_name in maker_map_data:
+                    msg = (
+                        f"type={t}, generated via {expr_str=} is not supported."
+                        f"The union options have duplicate values for {discriminator}."
+                    )
+                    raise RuntimeError(msg)
+                maker_map_data[arg_name] = maker_func
+
+        fname = make_variable_name("_DISAMBIGUATOR", ns=serializer_data.namespace)
+        serializer_data.namespace[fname] = maker_map_data
+        # build the final expression:
+        return f"{fname}[{inner_expr}]({expr_str})"
+
     # 2. Handle atoms (note that we don't recurse into `build_expr`)
     if dcs.is_dataclass(t):
-        cache_key = (t, *serializer_data.cache_args)
+        cache_data, func_postfix = serializer_data.cache_key
+        cache_key = (t, cache_data)
         if cache_key not in serializer_data.registry:
             serializer_data.registry[cache_key] = None  # Refuse to recurse.
             serializer_data.registry[cache_key] = serializer_data.maker_func(t)
 
-        fname = make_variable_name(f"{func_prefix}_{t.__name__}")
+        fname = make_variable_name(f"{func_prefix}_{t.__name__}{func_postfix}")
         serializer_data.namespace[fname] = serializer_data.registry[cache_key]
         return f"{fname}({expr_str})"
 
@@ -119,12 +185,6 @@ def build_expr(
         return f"{fname}({expr_str})"
 
     # 3. Fallbacks
-    if (origin is tp.Union or origin is types.UnionType) and (
-        any(dcs.is_dataclass(a) for a in args)
-    ):
-        msg = f"type: {t} with {origin=} and {args=}, generated via {expr_str=} is not supported"
-        raise RuntimeError(msg)
-
     return expr_str
 
 

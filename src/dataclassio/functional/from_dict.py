@@ -3,6 +3,12 @@ import inspect
 
 import typing_extensions as tp
 
+from ..config import (
+    DioOptions,
+    _TotalDioOptions,
+    get_composite_options,
+    get_options_cache_key,
+)
 from ..core import (
     SerializerData,
     TextLines,
@@ -20,7 +26,7 @@ __all__ = (
     "make_from_dict",
 )
 
-_KNOWN_DESERIALIZERS: dict[tuple[type, EFS], tp.Callable[[tp.Mapping], tp.Any]] = {}
+_KNOWN_DESERIALIZERS: dict[tuple[type, tp.Any], tp.Callable[[tp.Mapping], tp.Any]] = {}
 _EXTRA_FIELD_ATTR_NAME = "_extra_fields"
 _SPACER = "  "
 
@@ -43,21 +49,28 @@ class FieldSpec(tp.NamedTuple):
 def make_from_dict_source_code(
     cls: type[DataclassInstance],
     funcname: str = "",
-    extra_field_strategy=EFS.IGNORE,
+    options: DioOptions | None = None,  # call_options
 ) -> tuple[TextLines, dict[str, tp.Any]]:
     """Generate the source code and necessary namespace for a from_dict deserialization method."""
     funcname = funcname or f"deserialize_{cls.__name__}"
     cls_factory_name = make_variable_name("cls")
     ns: dict[str, tp.Any] = {cls_factory_name: cls}
+    current_variable_names: set = {cls_factory_name, "dikt", "_exc"}
+
+    call_options = get_composite_options(call_options=options)
 
     fields = get_fields(cls, include_all=True)
     field_data: dict[str, FieldSpec] = {}
 
-    current_variable_names: set = {cls_factory_name, "dikt", "_exc"}
     for f in fields:
         if not f.init:
             # init=False field. Don't try to read it in.
             continue
+
+        # extract and integrate field-options
+        field_options = get_composite_options(
+            field_options=f.metadata.get("dio"), call_options=options
+        )
 
         # Get the expression for parsing this field.
         field_expr = get_field_expression(
@@ -65,8 +78,9 @@ def make_from_dict_source_code(
             serializer_data=SerializerData(
                 registry=_KNOWN_DESERIALIZERS,
                 namespace=ns,
-                maker_func=lambda t: make_from_dict(t, extra_field_strategy=extra_field_strategy),
-                cache_args=(extra_field_strategy,),
+                maker_func=lambda t: make_from_dict(t, options=field_options),
+                cache_key=get_options_cache_key(field_options, "from_dict"),
+                options=field_options,
             ),
             direction="from_dict",
         )
@@ -120,7 +134,10 @@ def make_from_dict_source_code(
         data_str = ", ".join(init_parts)
 
         extras = _handle_extra_fields(
-            fields, extra_field_strategy, ns=ns, attribute_name=_EXTRA_FIELD_ATTR_NAME
+            fields,
+            call_options["extra_field_strategy"],
+            ns=ns,
+            attribute_name=_EXTRA_FIELD_ATTR_NAME,
         )
         if extras:
             lines.append(f"inst = {cls_factory_name}({data_str})")
@@ -134,18 +151,24 @@ def make_from_dict_source_code(
 
 def make_from_dict(
     cls: type[DataclassInstance],
-    extra_field_strategy: EFS = EFS.IGNORE,
+    *,
     include_src_in_docstring: bool = False,
+    options: _TotalDioOptions | DioOptions | None = None,
+    **kw: tp.Unpack[DioOptions],
 ):
     """Make a from_dict deserialization method for the given dataclass."""
-    if (f := _KNOWN_DESERIALIZERS.get((cls, extra_field_strategy), None)) is not None:
+    options = options or {}
+    options.update(kw)
+
+    opts = get_composite_options(call_options=options)
+    key, str_key = get_options_cache_key(opts, "from_dict")
+
+    if (f := _KNOWN_DESERIALIZERS.get((cls, key), None)) is not None:
         return f
 
-    func_name = f"deserialize_{cls.__name__}"
-    file_name = f"dataclassio/generated/{func_name}_efs_{extra_field_strategy.value}.py"
-    src, ns = make_from_dict_source_code(
-        cls, funcname=func_name, extra_field_strategy=extra_field_strategy
-    )
+    func_name = f"deserialize_{cls.__name__}{str_key}"
+    file_name = f"dataclassio/generated/{func_name}{str_key}.py"
+    src, ns = make_from_dict_source_code(cls, funcname=func_name, options=options)
 
     code_obj = cache_source_code(src, file_name)
     exec(code_obj, ns)
