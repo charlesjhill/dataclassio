@@ -31,11 +31,11 @@ class TestInitFalseFields:
         expected = _sch.InitFalseDC(1.0, 2.0)
 
         # Business as usual
-        new_inst = _sch.InitFalseDC.from_dict(data, EFS.IGNORE)
+        new_inst = _sch.InitFalseDC.from_dict(data, extra_field_strategy=EFS.IGNORE)
         assert expected == new_inst
 
         # No exception despite the "extra" field
-        new_inst = _sch.InitFalseDC.from_dict(data, EFS.STRICT)
+        new_inst = _sch.InitFalseDC.from_dict(data, extra_field_strategy=EFS.STRICT)
         assert expected == new_inst
 
         # 'c' is not captured.

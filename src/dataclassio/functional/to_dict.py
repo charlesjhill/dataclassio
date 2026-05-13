@@ -1,5 +1,6 @@
 import typing_extensions as tp
 
+from ..config import DioOptions, _TotalDioOptions, get_composite_options, get_options_cache_key
 from ..core import (
     SerializerData,
     TextLines,
@@ -12,17 +13,19 @@ from ..types import DataclassInstance
 from ._shared import cache_source_code
 from .from_dict import _EXTRA_FIELD_ATTR_NAME
 
-_KNOWN_SERIALIZERS: dict[tuple[type, bool], tp.Callable[[DataclassInstance], dict]] = {}
+_KNOWN_SERIALIZERS: dict[tuple[type, tp.Hashable], tp.Callable[[DataclassInstance], dict]] = {}
 _SPACER = "  "
 
 
 def make_to_dict_source_code(
     cls: type[DataclassInstance],
     funcname: str = "",
-    skip_defaults: bool = False,
+    options: _TotalDioOptions | DioOptions | None = None,  # call_options
 ) -> tuple[TextLines, dict[str, tp.Any]]:
     funcname = funcname or f"serialize_{cls.__name__}"
     ns: dict[str, tp.Any] = {}
+
+    call_options = get_composite_options(call_options=options)
 
     # Start building up the output.
     # We are going to serialize objects. We also need to check if they
@@ -33,14 +36,19 @@ def make_to_dict_source_code(
     literal_lines = TextLines(spacer=_SPACER)
     for f in get_fields(cls):
         # Form the expression itself that gets the value.
+
+        field_options = get_composite_options(
+            field_options=f.metadata.get("dio"), call_options=options
+        )
+
         field_expr = get_field_expression(
             f,
             direction="to_dict",
             serializer_data=SerializerData(
                 registry=_KNOWN_SERIALIZERS,
                 namespace=ns,
-                maker_func=lambda t: make_to_dict(t, skip_defaults=skip_defaults),
-                cache_args=(skip_defaults,),
+                maker_func=lambda t: make_to_dict(t, options=field_options),
+                cache_key=get_options_cache_key(field_options, "to_dict"),
             ),
         )
 
@@ -51,7 +59,7 @@ def make_to_dict_source_code(
 
         # We need an explicit check for `has_default` since `get_default` cannot distinguish between
         # "no default" and "default=None".
-        if skip_defaults and field_has_default(f):
+        if call_options["skip_defaults"] and field_has_default(f):
             # Add a hardcoded gate that checks if we have a default value. If so, don't
             #  add anything to the dict.
             default_expression = parse_default_expression(f, ns, precompute_factory=False)
@@ -92,21 +100,30 @@ def make_to_dict_source_code(
 
 def make_to_dict(
     cls: type[DataclassInstance],
-    skip_defaults: bool = False,
+    *,
     include_src_in_docstring: bool = True,
+    options: _TotalDioOptions | DioOptions | None = None,
+    **kw: tp.Unpack[DioOptions],
 ):
-    if (f := _KNOWN_SERIALIZERS.get((cls, skip_defaults), None)) is not None:
+    """Make a to_dict serialization method for the given dataclass."""
+    options = options or {}
+    options.update(kw)
+
+    opts = get_composite_options(call_options=options)
+    key, str_key = get_options_cache_key(opts, "to_dict")
+
+    if (f := _KNOWN_SERIALIZERS.get((cls, key), None)) is not None:
         return f
 
-    func_name = f"serialize_{cls.__name__}"
-
-    file_name = f"dataclassio/generated/{func_name}_skip_defaults_{skip_defaults!s}.py"
-    src, ns = make_to_dict_source_code(cls=cls, funcname=func_name, skip_defaults=skip_defaults)
+    func_name = f"serialize_{cls.__name__}{str_key}"
+    file_name = f"dataclassio/generated/{func_name}{str_key}.py"
+    src, ns = make_to_dict_source_code(cls=cls, funcname=func_name, options=options)
 
     code_obj = cache_source_code(src, file_name)
-
     exec(code_obj, ns)
+
     func = ns[func_name]
     if include_src_in_docstring:
         func.__doc__ += f"\n\n{src[2:]!s}\n"
+
     return func

@@ -17,7 +17,7 @@ class SerializerData(tp.NamedTuple):
     registry: tp.MutableMapping
     namespace: tp.MutableMapping
     maker_func: tp.Callable[[DataclassInstance], tp.Callable]
-    cache_args: tuple
+    cache_key: tuple[tp.Hashable, str]
 
 
 def build_expr(
@@ -86,12 +86,13 @@ def build_expr(
 
     # 2. Handle atoms (note that we don't recurse into `build_expr`)
     if dcs.is_dataclass(t):
-        cache_key = (t, *serializer_data.cache_args)
+        cache_data, func_postfix = serializer_data.cache_key
+        cache_key = (t, cache_data)
         if cache_key not in serializer_data.registry:
             serializer_data.registry[cache_key] = None  # Refuse to recurse.
             serializer_data.registry[cache_key] = serializer_data.maker_func(t)
 
-        fname = make_variable_name(f"{func_prefix}_{t.__name__}")
+        fname = make_variable_name(f"{func_prefix}_{t.__name__}{func_postfix}")
         serializer_data.namespace[fname] = serializer_data.registry[cache_key]
         return f"{fname}({expr_str})"
 
