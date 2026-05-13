@@ -80,6 +80,7 @@ def make_from_dict_source_code(
                 namespace=ns,
                 maker_func=lambda t: make_from_dict(t, options=field_options),
                 cache_key=get_options_cache_key(field_options, "from_dict"),
+                options=field_options,
             ),
             direction="from_dict",
         )

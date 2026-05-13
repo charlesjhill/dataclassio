@@ -49,6 +49,7 @@ def make_to_dict_source_code(
                 namespace=ns,
                 maker_func=lambda t: make_to_dict(t, options=field_options),
                 cache_key=get_options_cache_key(field_options, "to_dict"),
+                options=field_options,
             ),
         )
 
