@@ -8,6 +8,7 @@ __all__ = (
     "DioOptions",
     "FieldOpts",
     "get_composite_options",
+    "get_passthrough_options",
     "get_options_cache_key",
     "NoValue",
 )
@@ -89,10 +90,19 @@ def get_composite_options(
     )
 
 
+def get_passthrough_options(
+    field_options: dict | None = None,
+    _shallow_fields=frozenset(("discriminator", "skip_if_default")),
+):
+    passthrough_field_options = field_options.copy() if field_options else {}
+    for opt in _shallow_fields:
+        passthrough_field_options.pop(opt, None)
+    return passthrough_field_options
+
+
 _BOTH_KEYS = frozenset(("discriminator", "include_src_in_docstring"))
 _FROM_KEYS = _BOTH_KEYS.union(("extra_field_strategy",))
 _TO_KEYS = _BOTH_KEYS.union(("skip_if_default",))
-# _TO_KEYS = _BOTH_KEYS
 _MISSING = object()
 
 

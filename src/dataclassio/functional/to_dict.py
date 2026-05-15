@@ -1,6 +1,12 @@
 import typing_extensions as tp
 
-from ..config import DioOptions, _TotalDioOptions, get_composite_options, get_options_cache_key
+from ..config import (
+    DioOptions,
+    _TotalDioOptions,
+    get_composite_options,
+    get_options_cache_key,
+    get_passthrough_options,
+)
 from ..core import (
     SerializerData,
     TextLines,
@@ -43,10 +49,14 @@ def make_to_dict_source_code(
         resolved_options = get_composite_options(field_opts, call_options)
 
         # Remove field-shallow configuration options before they (possibly) propagate.
-        passthrough_field_opts = field_opts.copy() if field_opts else {}
-        passthrough_field_opts.pop("skip_if_default", None)
-        passthrough_field_opts.pop("discriminator", None)
-        cache_options = get_composite_options(passthrough_field_opts, call_options)
+        passthrough_field_opts = get_passthrough_options(field_opts)
+        cache_key = get_options_cache_key(
+            get_composite_options(
+                passthrough_field_opts,
+                call_options,
+            ),
+            "to_dict",
+        )
 
         field_expr = get_field_expression(
             f,
@@ -57,7 +67,7 @@ def make_to_dict_source_code(
                 maker_func=lambda t, m=passthrough_field_opts: make_to_dict(
                     t, options=call_options, _field_options=m
                 ),
-                cache_key=get_options_cache_key(cache_options, "to_dict"),
+                cache_key=cache_key,
                 options=resolved_options,
             ),
         )

@@ -8,6 +8,7 @@ from ..config import (
     _TotalDioOptions,
     get_composite_options,
     get_options_cache_key,
+    get_passthrough_options,
 )
 from ..core import (
     SerializerData,
@@ -71,6 +72,16 @@ def make_from_dict_source_code(
         field_opts = f.metadata.get("dio")
         resolved_options = get_composite_options(field_opts, call_options)
 
+        # Remove field-shallow configuration options before they (possibly) propagate.
+        passthrough_field_opts = get_passthrough_options(field_opts)
+        cache_key = get_options_cache_key(
+            get_composite_options(
+                passthrough_field_opts,
+                call_options,
+            ),
+            "from_dict",
+        )
+
         # Get the expression for parsing this field.
         field_expr = get_field_expression(
             f,
@@ -78,10 +89,10 @@ def make_from_dict_source_code(
             serializer_data=SerializerData(
                 registry=_KNOWN_DESERIALIZERS,
                 namespace=ns,
-                maker_func=lambda t, m=field_opts: make_from_dict(
-                    t, options=call_options, _field_options=field_opts
+                maker_func=lambda t, m=passthrough_field_opts: make_from_dict(
+                    t, options=call_options, _field_options=m
                 ),
-                cache_key=get_options_cache_key(resolved_options, "from_dict"),
+                cache_key=cache_key,
                 options=resolved_options,
             ),
         )
