@@ -19,7 +19,7 @@ from ..core import (
     parse_default_expression,
 )
 from ..types import EFS, DataclassInstance
-from ._shared import cache_source_code
+from ._shared import maker_core
 
 __all__ = (
     "make_from_dict_source_code",
@@ -48,16 +48,16 @@ class FieldSpec(tp.NamedTuple):
 
 def make_from_dict_source_code(
     cls: type[DataclassInstance],
+    *,
     funcname: str = "",
-    options: DioOptions | None = None,  # call_options
+    call_options: _TotalDioOptions | DioOptions | None = None,
+    _field_options: _TotalDioOptions | DioOptions | None = None,
 ) -> tuple[TextLines, dict[str, tp.Any]]:
     """Generate the source code and necessary namespace for a from_dict deserialization method."""
     funcname = funcname or f"deserialize_{cls.__name__}"
     cls_factory_name = make_variable_name("cls")
     ns: dict[str, tp.Any] = {cls_factory_name: cls}
     current_variable_names: set = {cls_factory_name, "dikt", "_exc"}
-
-    call_options = get_composite_options(call_options=options)
 
     fields = get_fields(cls, include_all=True)
     field_data: dict[str, FieldSpec] = {}
@@ -68,21 +68,22 @@ def make_from_dict_source_code(
             continue
 
         # extract and integrate field-options
-        field_options = get_composite_options(
-            field_options=f.metadata.get("dio"), call_options=options
-        )
+        field_opts = f.metadata.get("dio")
+        resolved_options = get_composite_options(field_opts, call_options)
 
         # Get the expression for parsing this field.
         field_expr = get_field_expression(
             f,
+            direction="from_dict",
             serializer_data=SerializerData(
                 registry=_KNOWN_DESERIALIZERS,
                 namespace=ns,
-                maker_func=lambda t: make_from_dict(t, options=field_options),
-                cache_key=get_options_cache_key(field_options, "from_dict"),
-                options=field_options,
+                maker_func=lambda t, m=field_opts: make_from_dict(
+                    t, options=call_options, _field_options=field_opts
+                ),
+                cache_key=get_options_cache_key(resolved_options, "from_dict"),
+                options=resolved_options,
             ),
-            direction="from_dict",
         )
 
         var_name = make_variable_name(f.name, ns=current_variable_names.union(ns))
@@ -94,6 +95,8 @@ def make_from_dict_source_code(
             field_expr,
             field_has_default(f),
         )
+
+    local_options = get_composite_options(call_options=call_options, field_options=_field_options)
 
     # Assemble the final function body
     lines = TextLines(spacer=_SPACER)
@@ -135,7 +138,7 @@ def make_from_dict_source_code(
 
         extras = _handle_extra_fields(
             fields,
-            call_options["extra_field_strategy"],
+            local_options["extra_field_strategy"],
             ns=ns,
             attribute_name=_EXTRA_FIELD_ATTR_NAME,
         )
@@ -152,32 +155,30 @@ def make_from_dict_source_code(
 def make_from_dict(
     cls: type[DataclassInstance],
     *,
-    include_src_in_docstring: bool = False,
     options: _TotalDioOptions | DioOptions | None = None,
+    _field_options: _TotalDioOptions | DioOptions | None = None,
     **kw: tp.Unpack[DioOptions],
 ):
-    """Make a from_dict deserialization method for the given dataclass."""
-    options = options or {}
-    options.update(kw)
+    """Make a from_dict deserialization method for the given dataclass.
 
-    opts = get_composite_options(call_options=options)
-    key, str_key = get_options_cache_key(opts, "from_dict")
-
-    if (f := _KNOWN_DESERIALIZERS.get((cls, key), None)) is not None:
-        return f
-
-    func_name = f"deserialize_{cls.__name__}{str_key}"
-    file_name = f"dataclassio/generated/{func_name}{str_key}.py"
-    src, ns = make_from_dict_source_code(cls, funcname=func_name, options=options)
-
-    code_obj = cache_source_code(src, file_name)
-    exec(code_obj, ns)
-
-    func = ns[func_name]
-    if include_src_in_docstring:
-        func.__doc__ += f"\n\n{src[2:]!s}\n"
-
-    return func
+    Args:
+        cls: The Dataclass type to generate the deserializer for.
+        options: `DioOptions` to use to customize the code generation process. These may also
+            be provided via **kwargs. These propagate through to the fields of this dataclass
+            type.
+        _field_options: `DioOptions` that _do not_ propagate. Used for field-level configuration
+            that is applying to this object shallowly.
+    """
+    return maker_core(
+        cls,
+        _KNOWN_DESERIALIZERS,
+        make_from_dict_source_code,
+        "deserialize",
+        "from_dict",
+        options=options,
+        _field_options=_field_options,
+        **kw,
+    )
 
 
 def _handle_extra_fields(

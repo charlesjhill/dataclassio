@@ -7,7 +7,7 @@ class TestDictNestedDataclasses:
 
         actual = sch.User.from_dict(ex_user)
         assert actual.address is None
-        assert actual.to_dict(skip_defaults=True) == ex_user
+        assert actual.to_dict(skip_if_default=True) == ex_user
 
     def test_optional_non_default_dataclass(self):
         ex_data = {"metric": None}
@@ -22,7 +22,7 @@ class TestDictNestedDataclasses:
         actual = sch.User.from_dict(ex_user)
         assert isinstance(actual.address, sch.Address)
         assert actual.address.city == "Anytown"
-        assert actual.to_dict(skip_defaults=True) == ex_user
+        assert actual.to_dict(skip_if_default=True) == ex_user
 
     def test_simple_list_dataclass(self):
         ex_data = {
@@ -41,7 +41,7 @@ class TestDictNestedDataclasses:
         assert len(actual.rows) == 2
         assert all(isinstance(r, sch.TinyRow) for r in actual.rows)
         assert actual.rows[1].name == "b"
-        assert actual.to_dict(skip_defaults=True) == ex_data
+        assert actual.to_dict(skip_if_default=True) == ex_data
 
     def test_dict_of_list_of_dataclass(self):
         ex_data = {
@@ -76,4 +76,4 @@ class TestDictNestedDataclasses:
         assert isinstance(actual.named_addresses["home"], sch.Address)
         assert isinstance(actual.named_addresses["work"], sch.Address)
         assert actual.named_addresses["work"].city == "Coolsville"
-        assert actual.to_dict(skip_defaults=True) == data
+        assert actual.to_dict(skip_if_default=True) == data

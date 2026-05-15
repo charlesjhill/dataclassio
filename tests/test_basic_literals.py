@@ -38,7 +38,7 @@ class TestDictLiterals:
         rt_dikt1 = addr1.to_dict()
         assert rt_dikt1 == {**dikt, "zip_code": None}
 
-        assert addr1.to_dict(skip_defaults=True) == dikt
+        assert addr1.to_dict(skip_if_default=True) == dikt
 
     def test_useful_message_for_missing_value(self):
         with pytest.raises(KeyError, match="required attribute.*zip_code"):
@@ -49,13 +49,13 @@ class TestDictLiterals:
         actual = _schemas.User.from_dict(dikt)
         expected = _schemas.User(1, "Alice", False)
         assert actual == expected
-        assert actual.to_dict(skip_defaults=True) == dikt
+        assert actual.to_dict(skip_if_default=True) == dikt
 
         dikt_with_admin = {"id": 2, "name": "Bob", "is_admin": True}
         actual = _schemas.User.from_dict(dikt_with_admin)
         expected = _schemas.User(2, "Bob", True)
         assert actual == expected
-        assert actual.to_dict(skip_defaults=True) == dikt_with_admin
+        assert actual.to_dict(skip_if_default=True) == dikt_with_admin
 
     def test_plain_containers(self):
         dikt = {"id": 1, "name": "Alice", "metadata": {"k1": "k2"}, "data": [1, 2, 3]}

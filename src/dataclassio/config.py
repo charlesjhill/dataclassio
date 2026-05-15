@@ -29,13 +29,15 @@ NoValue: tp.Final = _NoValue()
 class DioOptions(tp.TypedDict, total=False):
     discriminator: str | _NoValue
     extra_field_strategy: EFS
-    skip_defaults: bool
+    skip_if_default: bool
+    include_src_in_docstring: bool
 
 
 class _TotalDioOptions(DioOptions):
     discriminator: str | _NoValue
     extra_field_strategy: EFS
-    skip_defaults: bool
+    skip_if_default: bool
+    include_src_in_docstring: bool
 
 
 def FieldOpts(**kw: tp.Unpack[DioOptions]):
@@ -44,7 +46,10 @@ def FieldOpts(**kw: tp.Unpack[DioOptions]):
 
 
 DIO_DEFAULT_OPTIONS = _TotalDioOptions(
-    discriminator=NoValue, extra_field_strategy=EFS.IGNORE, skip_defaults=False
+    discriminator=NoValue,
+    extra_field_strategy=EFS.IGNORE,
+    skip_if_default=False,
+    include_src_in_docstring=False,
 )
 
 
@@ -73,33 +78,38 @@ def get_composite_options(
     """
     return tp.cast(
         _TotalDioOptions,
-        ChainMap(
-            field_options or {},
-            call_options or {},
-            type_options or {},
-            DIO_DEFAULT_OPTIONS,
+        dict(
+            ChainMap(
+                field_options or {},
+                call_options or {},
+                type_options or {},
+                DIO_DEFAULT_OPTIONS,
+            )
         ),
     )
 
 
-_FROM_KEYS = frozenset(("discriminator", "extra_field_strategy"))
-_TO_KEYS = frozenset(("discriminator", "skip_defaults"))
+_BOTH_KEYS = frozenset(("discriminator", "include_src_in_docstring"))
+_FROM_KEYS = _BOTH_KEYS.union(("extra_field_strategy",))
+_TO_KEYS = _BOTH_KEYS.union(("skip_if_default",))
+# _TO_KEYS = _BOTH_KEYS
+_MISSING = object()
 
 
 def _build_string(opts: DioOptions):
     str_data = []
 
-    if "discriminator" in opts and opts["discriminator"] != DIO_DEFAULT_OPTIONS["discriminator"]:
-        str_data.append(f"discriminator_{opts['discriminator']}")
+    bundles: list[tuple[str, tp.Callable[[tp.Any], str]]] = [
+        ("discriminator", lambda x: f"discriminator_{x}"),
+        ("extra_field_strategy", lambda x: f"efs_{x.value}"),
+        ("skip_if_default", lambda _: "skip_if_default"),
+        ("include_src_in_docstring", lambda _: "incl_src"),
+    ]
 
-    if (
-        "extra_field_strategy" in opts
-        and opts["extra_field_strategy"] != DIO_DEFAULT_OPTIONS["extra_field_strategy"]
-    ):
-        str_data.append(f"efs_{opts['extra_field_strategy'].value}")
-
-    if "skip_defaults" in opts and opts["skip_defaults"] != DIO_DEFAULT_OPTIONS["skip_defaults"]:
-        str_data.append(f"skip_defaults_{opts['skip_defaults']!s}")
+    for field_name, str_gen in bundles:
+        v = opts.get(field_name, _MISSING)
+        if v is not _MISSING and v != DIO_DEFAULT_OPTIONS[field_name]:
+            str_data.append(str_gen(v))
 
     postfix = "__".join(str_data)
     if postfix:
