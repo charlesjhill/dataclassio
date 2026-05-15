@@ -13,13 +13,25 @@ __all__ = ("SerializerData", "build_expr", "get_field_expression")
 
 
 class SerializerData(tp.NamedTuple):
-    """Extra information needed by `buiild_expr` to parse nested dataclasses."""
+    """Extra information needed by `build_expr` to parse nested dataclasses."""
 
     registry: tp.MutableMapping
     namespace: tp.MutableMapping
-    maker_func: tp.Callable[[DataclassInstance], tp.Callable]
+    maker_func: tp.Callable[[type[DataclassInstance]], tp.Callable]
     cache_key: tuple[tp.Hashable, str]
     options: _TotalDioOptions
+
+    def get_dataclass_function(self, kls: type[DataclassInstance]) -> tuple[tp.Callable, str]:
+        """Return a function for making a kls, and its suggested rootname."""
+        # Get the maker func
+        cache_data, postfix = self.cache_key
+        cache_key = (kls, cache_data)
+        if cache_key not in self.registry:
+            self.registry[cache_key] = None
+            self.registry[cache_key] = self.maker_func(kls)
+        maker_func = self.registry[cache_key]
+
+        return maker_func, f"{kls.__name__}{postfix}"
 
 
 def build_expr(
@@ -134,7 +146,10 @@ def build_expr(
                     f"Union option {cls_option} has a field with name {discriminator}, but it is not a Literal with string arguments."
                 )
                 raise RuntimeError(msg)
-            maker_func = serializer_data.maker_func(cls_option)
+
+            # Get the maker func
+            maker_func, _ = serializer_data.get_dataclass_function(cls_option)
+
             for arg_name in discrim_args:
                 if arg_name in maker_map_data:
                     msg = (
@@ -151,14 +166,10 @@ def build_expr(
 
     # 2. Handle atoms (note that we don't recurse into `build_expr`)
     if dcs.is_dataclass(t):
-        cache_data, func_postfix = serializer_data.cache_key
-        cache_key = (t, cache_data)
-        if cache_key not in serializer_data.registry:
-            serializer_data.registry[cache_key] = None  # Refuse to recurse.
-            serializer_data.registry[cache_key] = serializer_data.maker_func(t)
+        maker_func, root_name = serializer_data.get_dataclass_function(t)
 
-        fname = make_variable_name(f"{func_prefix}_{t.__name__}{func_postfix}")
-        serializer_data.namespace[fname] = serializer_data.registry[cache_key]
+        fname = make_variable_name(f"{func_prefix}_{root_name}")
+        serializer_data.namespace[fname] = maker_func
         return f"{fname}({expr_str})"
 
     if isinstance(t, type) and issubclass(t, enum.Enum):
