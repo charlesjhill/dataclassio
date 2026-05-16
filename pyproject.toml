@@ -1,6 +1,6 @@
 [project]
 name = "hill.dataclassio"
-version = "0.1.0"
+version = "0.2.0"
 description = "A lightweight package for converting dataclass hierarchies to and from dictionaries."
 readme = "README.md"
 authors = [
@@ -39,10 +39,16 @@ module-name = "dataclassio"
 dev = [
     "ipython>=9.5.0",
     "jupyter>=1.1.1",
+    "line-profiler>=5.0.2",
     "pytest>=8.4.2",
     "pytest-cov>=7.1.0",
     "rich>=14.1.0",
     "twine>=6.2.0",
+]
+benchmark = [
+    "msgspec>=0.21.1",
+    "pybenchx>=1.2.0",
+    "pydantic>=2.13.4",
 ]
 
 [tool.pytest.ini_options]
