@@ -46,6 +46,8 @@ dev = [
     "twine>=6.2.0",
 ]
 benchmark = [
+    "dataclass-wizard>=0.39.1",
+    "mashumaro>=3.21",
     "msgspec>=0.21.1",
     "pybenchx>=1.2.0",
     "pydantic>=2.13.4",
