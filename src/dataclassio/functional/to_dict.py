@@ -15,7 +15,7 @@ from ..core import (
     get_fields,
     parse_default_expression,
 )
-from ..types import DataclassInstance
+from ..types import DataclassInstance, TDataclass
 from ._shared import maker_core
 from .from_dict import _EXTRA_FIELD_ATTR_NAME
 
@@ -120,12 +120,12 @@ def make_to_dict_source_code(
 
 
 def make_to_dict(
-    cls: type[DataclassInstance],
+    cls: type[TDataclass],
     *,
     options: _TotalDioOptions | DioOptions | None = None,
     _field_options: _TotalDioOptions | DioOptions | None = None,
     **kw: tp.Unpack[DioOptions],
-):
+) -> tp.Callable[[TDataclass], dict[str, tp.Any]]:
     """Make a to_dict serialization method for the given dataclass.
 
     Args:
@@ -146,3 +146,24 @@ def make_to_dict(
         _field_options=_field_options,
         **kw,
     )
+
+
+def to_dict(
+    obj: DataclassInstance,
+    *,
+    options: _TotalDioOptions | DioOptions | None = None,
+    **kw: tp.Unpack[DioOptions],
+):
+    """Convert a dataclass into a dictionary, recursively.
+
+    Args:
+        cls: The Dataclass instance to dump.
+        options: `DioOptions` to use to customize the code generation process. These may also
+            be provided via **kwargs. These propagate through to the fields of this dataclass
+            type.
+
+    Returns:
+        A dictionary representation of the instance.
+    """
+    dumper = make_to_dict(type(obj), options=options, **kw)
+    return dumper(obj)

@@ -10,21 +10,21 @@ from dataclassio.config import FieldOpts
 @dcs.dataclass
 class HumanAnnotator:
     id: str
-    type: tp.Literal["human_annotator", "human"] = "human_annotator"
+    type: tp.Literal["human_annotator", "human"]
     team: str | None = None
 
 
 @dcs.dataclass
 class MachineAnnotator:
     id: str
-    type: tp.Literal["machine_annotator"] = "machine_annotator"
+    type: tp.Literal["machine_annotator"]
     algorithm_type: str | None = None
 
 
 @dcs.dataclass
 class AdminAnnotator:
     id: str
-    type: tp.Literal["admin_annotator"] = "admin_annotator"
+    type: tp.Literal["admin_annotator"]
     level: int = 1
 
 
@@ -100,8 +100,8 @@ class TestDiscriminatedUnions:
         """Ensure to_dict produces a dictionary that can be re-parsed into the same union."""
         original = Dataset(
             annotators=[
-                HumanAnnotator(id="H1", team="A-Team"),
-                MachineAnnotator(id="M1", algorithm_type="YOLO"),
+                HumanAnnotator(id="H1", team="A-Team", type="human_annotator"),
+                MachineAnnotator(id="M1", algorithm_type="YOLO", type="machine_annotator"),
             ]
         )
 

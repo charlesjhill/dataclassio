@@ -19,12 +19,13 @@ from ..core import (
     make_variable_name,
     parse_default_expression,
 )
-from ..types import EFS, DataclassInstance
+from ..types import EFS, DataclassInstance, TDataclass
 from ._shared import maker_core
 
 __all__ = (
     "make_from_dict_source_code",
     "make_from_dict",
+    "from_dict",
 )
 
 _KNOWN_DESERIALIZERS: dict[tuple[type, tp.Any], tp.Callable[[tp.Mapping], tp.Any]] = {}
@@ -164,12 +165,12 @@ def make_from_dict_source_code(
 
 
 def make_from_dict(
-    cls: type[DataclassInstance],
+    cls: type[TDataclass],
     *,
     options: _TotalDioOptions | DioOptions | None = None,
     _field_options: _TotalDioOptions | DioOptions | None = None,
     **kw: tp.Unpack[DioOptions],
-):
+) -> tp.Callable[[tp.Mapping[str, tp.Any]], TDataclass]:
     """Make a from_dict deserialization method for the given dataclass.
 
     Args:
@@ -231,3 +232,26 @@ def _handle_extra_fields(
 
     msg = f"Unexpected {strategy=}. Must be an ExtraFieldStrategy enumeration."
     raise ValueError(msg)
+
+
+def from_dict(
+    kls: type[TDataclass],
+    dikt: tp.Mapping[str, tp.Any],
+    *,
+    options: _TotalDioOptions | DioOptions | None = None,
+    **kw: tp.Unpack[DioOptions],
+) -> TDataclass:
+    """Load a dictionary into a Dataclass.
+
+    Args:
+        cls: The type of the dataclass to generate
+        dikt: The mapping of data used to populate the dataclass.
+        options: `DioOptions` to use to customize the code generation process. These may also
+            be provided via **kwargs. These propagate through to the fields of this dataclass
+            type.
+
+    Returns:
+        A dataclass instance.
+    """
+    loader = make_from_dict(kls, options=options, **kw)
+    return loader(dikt)

@@ -14,7 +14,9 @@ __all__ = (
     "EFS",
     "DataclassInstance",
     "NO_DEFAULT",
+    "TDataclass",
 )
+
 
 PathLike: tp.TypeAlias = str | bytes | Path | os.PathLike
 PathOrHandle: tp.TypeAlias = PathLike | io.IOBase
@@ -39,9 +41,6 @@ class DataclassInstance(tp.Protocol):
     __dataclass_fields__: tp.ClassVar[dict[str, dcs.Field]]
 
 
-class _NO_DEFAULT_TYPE:
-    pass
+TDataclass = tp.TypeVar("TDataclass", bound=DataclassInstance)
 
-
-# Sentinel for no default value. Use a class for a better repr.
-NO_DEFAULT = _NO_DEFAULT_TYPE()
+NO_DEFAULT = tp.Sentinel("NO_DEFAULT")

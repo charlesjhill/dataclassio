@@ -27,7 +27,6 @@ class SerializerData(tp.NamedTuple):
         cache_data, postfix = self.cache_key
         cache_key = (kls, cache_data)
         if cache_key not in self.registry:
-            self.registry[cache_key] = None
             self.registry[cache_key] = self.maker_func(kls)
         maker_func = self.registry[cache_key]
 

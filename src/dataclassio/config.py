@@ -133,5 +133,5 @@ def get_options_cache_key(
     relevant_keys = _FROM_KEYS if direction == "from_dict" else _TO_KEYS
     filtered_data = tp.cast(DioOptions, {k: v for k, v in options.items() if k in relevant_keys})
 
-    data = tuple(sorted(filtered_data.items()))
-    return data, _build_string(filtered_data)
+    key = _build_string(filtered_data)
+    return key, key
