@@ -4,7 +4,7 @@ import uuid
 
 import typing_extensions as tp
 
-from ..types import NO_DEFAULT
+from ..sentinels import NO_DEFAULT, NO_DEFAULT_T
 
 __all__ = (
     "get_fields",
@@ -33,7 +33,7 @@ def field_has_default(f: dcs.Field):
     return get_field_default(f, call_factory=False) is not NO_DEFAULT
 
 
-def get_field_default(f: dcs.Field, *, call_factory: bool = True):
+def get_field_default(f: dcs.Field, *, call_factory: bool = True) -> tp.Any | NO_DEFAULT_T:
     """Get the default value for a field, if any."""
     if f.default is not dcs.MISSING:
         return f.default

@@ -1,5 +1,6 @@
 import dataclasses as dcs
 import inspect
+from functools import partial
 
 import typing_extensions as tp
 
@@ -19,6 +20,7 @@ from ..core import (
     make_variable_name,
     parse_default_expression,
 )
+from ..sentinels import CYCLE_DETECTED, CYCLE_DETECTED_T
 from ..types import EFS, DataclassInstance, TDataclass
 from ._shared import maker_core
 
@@ -54,12 +56,16 @@ def make_from_dict_source_code(
     funcname: str = "",
     call_options: _TotalDioOptions | DioOptions | None = None,
     _field_options: _TotalDioOptions | DioOptions | None = None,
-) -> tuple[TextLines, dict[str, tp.Any]]:
+    _ns: dict[str, tp.Any] | None = None,
+) -> TextLines:
     """Generate the source code and necessary namespace for a from_dict deserialization method."""
     funcname = funcname or f"deserialize_{cls.__name__}"
-    cls_factory_name = make_variable_name("cls")
-    ns: dict[str, tp.Any] = {cls_factory_name: cls}
-    current_variable_names: set = {cls_factory_name, "dikt", "_exc"}
+    if _ns is None:
+        _ns = {}
+
+    cls_factory_name = make_variable_name("cls", ns=_ns)
+    _ns[cls_factory_name] = cls
+    current_variable_names: set[str] = {*_ns, "dikt", "_exc"}
 
     fields = get_fields(cls, include_all=True)
     field_data: dict[str, FieldSpec] = {}
@@ -86,19 +92,22 @@ def make_from_dict_source_code(
         # Get the expression for parsing this field.
         field_expr = get_field_expression(
             f,
-            direction="from_dict",
             serializer_data=SerializerData(
                 registry=_KNOWN_DESERIALIZERS,
-                namespace=ns,
-                maker_func=lambda t, m=passthrough_field_opts: make_from_dict(
-                    t, options=call_options, _field_options=m
+                namespace=_ns,
+                maker_func=partial(
+                    make_from_dict,
+                    options=call_options,
+                    _field_options=passthrough_field_opts,
+                    _ns=_ns,
                 ),
                 cache_key=cache_key,
                 options=resolved_options,
+                func_prefix="deserialize",
             ),
         )
 
-        var_name = make_variable_name(f.name, ns=current_variable_names.union(ns))
+        var_name = make_variable_name(f.name, ns=current_variable_names.union(_ns))
         current_variable_names.add(var_name)
 
         field_data[f.name] = FieldSpec(
@@ -128,7 +137,7 @@ def make_from_dict_source_code(
                 with lines.indent(f"if {fs.name!r} in dikt:"):
                     lines.append(f"{fs.var_name} = {fs.expr}")
                 with lines.indent("else:"):
-                    default_expr = parse_default_expression(fs.field, ns)
+                    default_expr = parse_default_expression(fs.field, _ns)
                     lines.append(f"{fs.var_name} = {default_expr}")
 
         # Now we need to build the constructor string. At this point, we have a local variable
@@ -149,9 +158,10 @@ def make_from_dict_source_code(
         data_str = ", ".join(init_parts)
 
         extras = _handle_extra_fields(
+            cls,
             fields,
             local_options["extra_field_strategy"],
-            ns=ns,
+            ns=_ns,
             attribute_name=_EXTRA_FIELD_ATTR_NAME,
         )
         if extras:
@@ -161,7 +171,7 @@ def make_from_dict_source_code(
         else:
             lines.append(f"return {cls_factory_name}({data_str})")
 
-    return lines, ns
+    return lines
 
 
 def make_from_dict(
@@ -169,8 +179,9 @@ def make_from_dict(
     *,
     options: _TotalDioOptions | DioOptions | None = None,
     _field_options: _TotalDioOptions | DioOptions | None = None,
+    _ns: dict[str, tp.Any] | None = None,
     **kw: tp.Unpack[DioOptions],
-) -> tp.Callable[[tp.Mapping[str, tp.Any]], TDataclass]:
+) -> tp.Callable[[tp.Mapping[str, tp.Any]], TDataclass] | CYCLE_DETECTED_T:
     """Make a from_dict deserialization method for the given dataclass.
 
     Args:
@@ -189,11 +200,13 @@ def make_from_dict(
         "from_dict",
         options=options,
         _field_options=_field_options,
+        _ns=_ns,
         **kw,
     )
 
 
 def _handle_extra_fields(
+    cls: type[DataclassInstance],
     fields: tp.Iterable[dcs.Field],
     strategy: EFS,
     *,
@@ -210,7 +223,7 @@ def _handle_extra_fields(
     # Precompute a lookup table with the known fields for this class.
     #  N.B. This will include init=False fields, thus preventing them from being counted
     #       as an extra.
-    field_names_set_varname = "_KNOWN_FIELDS"
+    field_names_set_varname = f"_KNOWN_FIELDS_{cls.__name__}"
     ns[field_names_set_varname] = frozenset(f.name for f in fields)
 
     extra_field_expr = (
@@ -254,4 +267,7 @@ def from_dict(
         A dataclass instance.
     """
     loader = make_from_dict(kls, options=options, **kw)
+    if loader is CYCLE_DETECTED:
+        msg = "Could not build deserializer due to reference cycle"
+        raise RuntimeError(msg)
     return loader(dikt)
