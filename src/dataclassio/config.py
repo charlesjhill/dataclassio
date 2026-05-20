@@ -2,6 +2,7 @@ from collections import ChainMap
 
 import typing_extensions as tp
 
+from .sentinels import NO_VALUE, NO_VALUE_T
 from .types import EFS
 
 __all__ = (
@@ -10,32 +11,18 @@ __all__ = (
     "get_composite_options",
     "get_passthrough_options",
     "get_options_cache_key",
-    "NoValue",
 )
-
-T = tp.TypeVar("T", bound=type)
-
-
-class _NoValue:
-    def __repr__(self) -> str:
-        return "<NoValueProvided>"
-
-    def __str__(self) -> str:
-        return "NoValueProvided"
-
-
-NoValue: tp.Final = _NoValue()
 
 
 class DioOptions(tp.TypedDict, total=False):
-    discriminator: str | _NoValue
+    discriminator: str | NO_VALUE_T
     extra_field_strategy: EFS
     skip_if_default: bool
     include_src_in_docstring: bool
 
 
 class _TotalDioOptions(DioOptions):
-    discriminator: str | _NoValue
+    discriminator: str | NO_VALUE_T
     extra_field_strategy: EFS
     skip_if_default: bool
     include_src_in_docstring: bool
@@ -47,7 +34,7 @@ def FieldOpts(**kw: tp.Unpack[DioOptions]):
 
 
 DIO_DEFAULT_OPTIONS = _TotalDioOptions(
-    discriminator=NoValue,
+    discriminator=NO_VALUE,
     extra_field_strategy=EFS.IGNORE,
     skip_if_default=False,
     include_src_in_docstring=False,
@@ -133,5 +120,5 @@ def get_options_cache_key(
     relevant_keys = _FROM_KEYS if direction == "from_dict" else _TO_KEYS
     filtered_data = tp.cast(DioOptions, {k: v for k, v in options.items() if k in relevant_keys})
 
-    data = tuple(sorted(filtered_data.items()))
-    return data, _build_string(filtered_data)
+    key = _build_string(filtered_data)
+    return key, key

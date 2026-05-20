@@ -27,34 +27,34 @@ coco_data = load_coco_dict()
 
 @loaders.bench(name="dataclassio", baseline=True)
 def test_dio():
-    return sch.Coco.from_dict(coco_data)
+    sch.Coco.from_dict(coco_data)
 
 
 @loaders.bench(name="dio_fast")
 def test_locals():
-    return sch.Coco.fast_from_dict(coco_data)
+    sch.Coco.fast_from_dict(coco_data)
 
 
 @loaders.bench(name="pydantic")
 def test_pyd():
-    return CocoPyd.model_validate(coco_data)
+    CocoPyd.model_validate(coco_data)
 
 
 @loaders.bench(name="msgspec_into_dataclass")
 def test_msgspec_into_dataclass():
-    return msgspec.convert(coco_data, sch.Coco)
+    msgspec.convert(coco_data, sch.Coco)
 
 
 @loaders.bench(name="msgspec_into_native")
 def test_msgspec_into_native():
-    return msgspec.convert(coco_data, CocoMsgSpec)
+    msgspec.convert(coco_data, CocoMsgSpec)
 
 
 @loaders.bench(name="mashumaro")
 def test_mashumaro():
-    return CocoMashumaro.from_dict(coco_data)
+    CocoMashumaro.from_dict(coco_data)
 
 
 @loaders.bench(name="dataclass-wizard")
 def test_dw():
-    return CocoDW.from_dict(coco_data)
+    CocoDW.from_dict(coco_data)

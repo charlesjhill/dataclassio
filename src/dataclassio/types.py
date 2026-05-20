@@ -2,10 +2,11 @@ import dataclasses as dcs
 import io
 import os
 from enum import Enum
-from functools import total_ordering
 from pathlib import Path
 
 import typing_extensions as tp
+
+from .sentinels import CYCLE_DETECTED_T
 
 __all__ = (
     "PathLike",
@@ -13,35 +14,23 @@ __all__ = (
     "ExtraFieldStrategy",
     "EFS",
     "DataclassInstance",
-    "NO_DEFAULT",
+    "TDataclass",
+    "FUNC_MAKER",
 )
-
-PathLike: tp.TypeAlias = str | bytes | Path | os.PathLike
-PathOrHandle: tp.TypeAlias = PathLike | io.IOBase
-
-
-@total_ordering
-class ExtraFieldStrategy(Enum):
-    STRICT = "strict"
-    IGNORE = "ignore"
-    CAPTURE = "capture"
-
-    def __lt__(self, other):
-        if not isinstance(other, ExtraFieldStrategy):
-            return NotImplemented
-        return self.value < other.value
-
-
-EFS = ExtraFieldStrategy
 
 
 class DataclassInstance(tp.Protocol):
     __dataclass_fields__: tp.ClassVar[dict[str, dcs.Field]]
 
 
-class _NO_DEFAULT_TYPE:
-    pass
+class ExtraFieldStrategy(Enum):
+    STRICT = "strict"
+    IGNORE = "ignore"
+    CAPTURE = "capture"
 
 
-# Sentinel for no default value. Use a class for a better repr.
-NO_DEFAULT = _NO_DEFAULT_TYPE()
+PathLike: tp.TypeAlias = str | bytes | Path | os.PathLike
+PathOrHandle: tp.TypeAlias = PathLike | io.IOBase
+EFS = ExtraFieldStrategy
+TDataclass = tp.TypeVar("TDataclass", bound=DataclassInstance)
+FUNC_MAKER = tp.Callable[..., tp.Callable | CYCLE_DETECTED_T]

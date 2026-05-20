@@ -1,5 +1,7 @@
 import typing_extensions as tp
 
+from dataclassio.sentinels import CYCLE_DETECTED, CYCLE_DETECTED_T
+
 from ..config import (
     DioOptions,
     _TotalDioOptions,
@@ -15,7 +17,7 @@ from ..core import (
     get_fields,
     parse_default_expression,
 )
-from ..types import DataclassInstance
+from ..types import DataclassInstance, TDataclass
 from ._shared import maker_core
 from .from_dict import _EXTRA_FIELD_ATTR_NAME
 
@@ -28,9 +30,11 @@ def make_to_dict_source_code(
     funcname: str = "",
     call_options: _TotalDioOptions | DioOptions | None = None,
     _field_options: _TotalDioOptions | DioOptions | None = None,
-) -> tuple[TextLines, dict[str, tp.Any]]:
+    _ns: dict | None = None,
+) -> TextLines:
     funcname = funcname or f"serialize_{cls.__name__}"
-    ns: dict[str, tp.Any] = {}
+    if _ns is None:
+        _ns = {}
 
     # Currently unused. Maybe in the future?
     # local_options = get_composite_options(_field_options, call_options)
@@ -60,15 +64,15 @@ def make_to_dict_source_code(
 
         field_expr = get_field_expression(
             f,
-            direction="to_dict",
             serializer_data=SerializerData(
                 registry=_KNOWN_SERIALIZERS,
-                namespace=ns,
+                namespace=_ns,
                 maker_func=lambda t, m=passthrough_field_opts: make_to_dict(
                     t, options=call_options, _field_options=m
                 ),
                 cache_key=cache_key,
                 options=resolved_options,
+                func_prefix="serialize",
             ),
         )
 
@@ -82,7 +86,7 @@ def make_to_dict_source_code(
         if resolved_options["skip_if_default"] and field_has_default(f):
             # Add a hardcoded gate that checks if we have a default value. If so, don't
             #  add anything to the dict.
-            default_expression = parse_default_expression(f, ns, precompute_factory=False)
+            default_expression = parse_default_expression(f, _ns, precompute_factory=False)
             comparator = "is not" if default_expression == "None" else "!="
 
             with default_check_lines.indent(
@@ -116,16 +120,17 @@ def make_to_dict_source_code(
         lines.extend(default_check_lines)
         lines.append("return dikt")
 
-    return lines, ns
+    return lines
 
 
 def make_to_dict(
-    cls: type[DataclassInstance],
+    cls: type[TDataclass],
     *,
     options: _TotalDioOptions | DioOptions | None = None,
     _field_options: _TotalDioOptions | DioOptions | None = None,
+    _ns: dict | None = None,
     **kw: tp.Unpack[DioOptions],
-):
+) -> tp.Callable[[TDataclass], dict[str, tp.Any]] | CYCLE_DETECTED_T:
     """Make a to_dict serialization method for the given dataclass.
 
     Args:
@@ -144,5 +149,30 @@ def make_to_dict(
         "to_dict",
         options=options,
         _field_options=_field_options,
+        _ns=_ns,
         **kw,
     )
+
+
+def to_dict(
+    obj: DataclassInstance,
+    *,
+    options: _TotalDioOptions | DioOptions | None = None,
+    **kw: tp.Unpack[DioOptions],
+):
+    """Convert a dataclass into a dictionary, recursively.
+
+    Args:
+        cls: The Dataclass instance to dump.
+        options: `DioOptions` to use to customize the code generation process. These may also
+            be provided via **kwargs. These propagate through to the fields of this dataclass
+            type.
+
+    Returns:
+        A dictionary representation of the instance.
+    """
+    dumper = make_to_dict(type(obj), options=options, **kw)
+    if dumper is CYCLE_DETECTED:
+        msg = "Could not generate a serializer due to a unresolved reference cycle."
+        raise RuntimeError(msg)
+    return dumper(obj)

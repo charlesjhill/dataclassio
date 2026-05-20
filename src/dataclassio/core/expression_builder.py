@@ -5,11 +5,21 @@ from datetime import datetime
 
 import typing_extensions as tp
 
-from ..config import NoValue, _TotalDioOptions
-from ..types import DataclassInstance
+from ..config import _TotalDioOptions
+from ..sentinels import CYCLE_DETECTED, CYCLE_DETECTED_T, NO_VALUE, NO_VALUE_T
+from ..types import FUNC_MAKER, DataclassInstance
 from .common import get_fields, make_variable_name, strip_optional
 
 __all__ = ("SerializerData", "build_expr", "get_field_expression")
+
+
+class ParserOutput(tp.NamedTuple):
+    parser: tp.Callable | CYCLE_DETECTED_T
+    fname: str
+
+    @property
+    def was_cycle(self):
+        return self.parser is CYCLE_DETECTED
 
 
 class SerializerData(tp.NamedTuple):
@@ -17,28 +27,48 @@ class SerializerData(tp.NamedTuple):
 
     registry: tp.MutableMapping
     namespace: tp.MutableMapping
-    maker_func: tp.Callable[[type[DataclassInstance]], tp.Callable]
+    maker_func: FUNC_MAKER
     cache_key: tuple[tp.Hashable, str]
     options: _TotalDioOptions
+    func_prefix: tp.Literal["deserialize", "serialize"]
 
-    def get_dataclass_function(self, kls: type[DataclassInstance]) -> tuple[tp.Callable, str]:
-        """Return a function for making a kls, and its suggested rootname."""
+    def get_parser_and_fname_for_cls(
+        self, kls: type[DataclassInstance], update_ns: bool = True
+    ) -> ParserOutput:
+        """Return a function for making a kls, and its suggested function name."""
         # Get the maker func
-        cache_data, postfix = self.cache_key
-        cache_key = (kls, cache_data)
-        if cache_key not in self.registry:
-            self.registry[cache_key] = None
-            self.registry[cache_key] = self.maker_func(kls)
-        maker_func = self.registry[cache_key]
+        parser = self.maker_func(kls)
+        if parser is CYCLE_DETECTED:
+            # Fallback path. DO NOT add this crap to the global namespace.
+            update_ns = False
 
-        return maker_func, f"{kls.__name__}{postfix}"
+        fname = f"{self.func_prefix}_{kls.__name__}{self.cache_key[1]}"
+        if update_ns:
+            self.namespace[fname] = parser
+
+        return ParserOutput(parser, fname)
+
+    def new_variable(self, name: str, value: tp.Any | NO_VALUE_T = NO_VALUE):
+        """Generate a new variable name which does not conflict with any in the namespace.
+
+        Args:
+            name: _Desired_ name of the variable. Extra characters will be appended to avoid
+                  conflicts, if necessary.
+            value: (Optional) value to assign to the variable in the current namespace.
+
+        Returns:
+            The assigned name for the variable.
+        """
+        assigned_fname = make_variable_name(name, ns=self.namespace)
+        if value is not NO_VALUE:
+            self.namespace[assigned_fname] = value
+        return assigned_fname
 
 
 def build_expr(
     t: tp.TypeForm,
     expr_str: str,
     serializer_data: SerializerData,
-    func_prefix: tp.Literal["deserialize", "serialize"] = "deserialize",
 ) -> str:
     """Create the expression to pack or unpack a type.
 
@@ -60,8 +90,6 @@ def build_expr(
         expr_str: string representation of how to access the value to pack or unpack.
             e.g., `"inst.attribute_name"` or `"dikt['attributeName']"`
         serializer_data: The structure to track information for parsing embedded dataclasses.
-        func_prefix: Prefix for dynamically created functions to pack or unpack embedded
-            dataclasses.
     """
     if isinstance(t, dcs.InitVar):
         # Strip the InitVar wrapper
@@ -72,18 +100,14 @@ def build_expr(
 
     # 1. Handle composite types (e.g., Optionals and containers)
     if is_optional:
-        inner_expr = build_expr(
-            stripped_type, expr_str, serializer_data=serializer_data, func_prefix=func_prefix
-        )
+        inner_expr = build_expr(stripped_type, expr_str, serializer_data=serializer_data)
         if inner_expr == expr_str:
             return expr_str
         return f"({inner_expr} if {expr_str} is not None else None)"
 
     if origin in (list, tp.List):
         inner_type = args[0] if args else tp.Any
-        inner_expr = build_expr(
-            inner_type, "x", serializer_data=serializer_data, func_prefix=func_prefix
-        )
+        inner_expr = build_expr(inner_type, "x", serializer_data=serializer_data)
         if inner_expr == "x":
             # No list comprehension needed.
             return expr_str
@@ -91,8 +115,8 @@ def build_expr(
 
     if origin in (dict, tp.Mapping):
         k_type, v_type = args if args else (tp.Any, tp.Any)
-        k_expr = build_expr(k_type, "k", serializer_data=serializer_data, func_prefix=func_prefix)
-        v_expr = build_expr(v_type, "v", serializer_data=serializer_data, func_prefix=func_prefix)
+        k_expr = build_expr(k_type, "k", serializer_data=serializer_data)
+        v_expr = build_expr(v_type, "v", serializer_data=serializer_data)
         if k_expr == "k" and v_expr == "v":
             # No subparsing necesary, just return as is.
             return expr_str
@@ -109,23 +133,22 @@ def build_expr(
             raise RuntimeError(msg)
         # check the field options.
         discriminator = serializer_data.options["discriminator"]
-        if discriminator is NoValue:
+        if discriminator is NO_VALUE:
             msg = (
                 f"type={t}, generated via {expr_str=} is not supported."
                 " A discriminator field was not provided."
             )
-        assert isinstance(discriminator, str)
+        # assert isinstance(discriminator, str)
 
-        # base case
-        if func_prefix == "deserialize":
+        if serializer_data.func_prefix == "deserialize":
             # from_dict
-            inner_expr = f"{expr_str}[{discriminator!r}]"
+            key_expr = f"{expr_str}[{discriminator!r}]"
         else:
             # to_dict
-            inner_expr = f"{expr_str}.{discriminator!s}"
+            key_expr = f"{expr_str}.{discriminator!s}"
 
         # build list of types:
-        maker_map_data: dict[str, tp.Any] = {}
+        maker_map_data: dict[str, ParserOutput] = {}
         for cls_option in args:
             fields = [f for f in get_fields(cls_option) if f.name == discriminator]
             if not fields:
@@ -147,8 +170,8 @@ def build_expr(
                 )
                 raise RuntimeError(msg)
 
-            # Get the maker func
-            maker_func, _ = serializer_data.get_dataclass_function(cls_option)
+            # Build the mapping of discriminator values to parsers.
+            parser_data = serializer_data.get_parser_and_fname_for_cls(cls_option)
 
             for arg_name in discrim_args:
                 if arg_name in maker_map_data:
@@ -157,24 +180,29 @@ def build_expr(
                         f"The union options have duplicate values for {discriminator}."
                     )
                     raise RuntimeError(msg)
-                maker_map_data[arg_name] = maker_func
+                maker_map_data[arg_name] = parser_data
 
-        fname = make_variable_name("_DISAMBIGUATOR", ns=serializer_data.namespace)
-        serializer_data.namespace[fname] = maker_map_data
-        # build the final expression:
-        return f"{fname}[{inner_expr}]({expr_str})"
+        if any(pd.was_cycle for pd in maker_map_data.values()):
+            # Bummer, got to do this the slow af way with late binding.
+            # If we ever support emitting _statements_, then we can do this more simply.
+            disambiguator_data = ", ".join(
+                f"{k!r}: {v.fname!s}" for k, v in maker_map_data.items()
+            )
+            fname = f"{{{disambiguator_data}}}"
+        else:
+            # nice. No reference cycles, so we an do this the normal way.
+            func_map = {k: v.parser for k, v in maker_map_data.items()}
+            fname = serializer_data.new_variable("_DISAMBIGUATOR", func_map)
+        return f"{fname}[{key_expr}]({expr_str})"
 
     # 2. Handle atoms (note that we don't recurse into `build_expr`)
     if dcs.is_dataclass(t):
-        maker_func, root_name = serializer_data.get_dataclass_function(t)
-
-        fname = make_variable_name(f"{func_prefix}_{root_name}")
-        serializer_data.namespace[fname] = maker_func
+        _, fname = serializer_data.get_parser_and_fname_for_cls(t, update_ns=True)
         return f"{fname}({expr_str})"
 
     if isinstance(t, type) and issubclass(t, enum.Enum):
         # For enum types, convert to the Enum.
-        if func_prefix == "serialize":
+        if serializer_data.func_prefix == "serialize":
             # To Dict
             return f"{expr_str}.value"
 
@@ -183,27 +211,22 @@ def build_expr(
         serializer_data.namespace[enum_name] = t  # Ensure the Enum type is in the namespace.
 
         # N.B. Doing `v if isinstance(v := {expr_str}, Enum) else Enum(v)` is slower than this.
-        return f"{enum_name}({expr_str})"
+        return f"({enum_name}({expr_str}))"
 
     if t is datetime:
-        if func_prefix == "serialize":
+        if serializer_data.func_prefix == "serialize":
             # To dict
             return f"({expr_str}).isoformat()"
 
         # from dict
-        fname = make_variable_name("_fromisoformat")
-        serializer_data.namespace[fname] = datetime.fromisoformat
+        fname = serializer_data.new_variable("_fromisoformat", datetime.fromisoformat)
         return f"{fname}({expr_str})"
 
     # 3. Fallbacks
     return expr_str
 
 
-def get_field_expression(
-    f: dcs.Field,
-    serializer_data: SerializerData,
-    direction: tp.Literal["to_dict", "from_dict"] = "from_dict",
-) -> str:
+def get_field_expression(f: dcs.Field, serializer_data: SerializerData) -> str:
     """Create the expression to pack or unpack a dataclass field.
 
     This is mostly a convenience wrapper around `build_expr`.
@@ -211,18 +234,13 @@ def get_field_expression(
     Args:
         f: The dataclasses.Field to parse.
         serializer_data: The structure to track information for parsing embedded dataclasses.
-        direction: Whether to create an expression for serializing (to_dict) or deserializing (from_dict).
     """
-    if direction == "from_dict":
-        access_expr = f"dikt[{f.name!r}]"
-        func_prefix = "deserialize"
-    elif direction == "to_dict":
+    if serializer_data.func_prefix == "serialize":
         access_expr = f"inst.{f.name}"
-        func_prefix = "serialize"
+    elif serializer_data.func_prefix == "deserialize":
+        access_expr = f"dikt[{f.name!r}]"
     else:
-        msg = f"Unknown {direction=}. Expected 'to_dict' or 'from_dict'."
+        msg = f"Unsupported {serializer_data.func_prefix=}. Expected 'deserialize' or 'serialize'."
         raise ValueError(msg)
 
-    return build_expr(
-        f.type, access_expr, serializer_data=serializer_data, func_prefix=func_prefix
-    )
+    return build_expr(f.type, access_expr, serializer_data=serializer_data)

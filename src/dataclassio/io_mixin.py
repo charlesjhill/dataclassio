@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 import typing_extensions as tp
 
+from . import functional as diof
 from .config import DioOptions
-from .functional import make_from_dict, make_to_dict
 from .functional.from_dict import _EXTRA_FIELD_ATTR_NAME
 from .types import PathOrHandle
 
@@ -65,10 +65,7 @@ class IOMixin:
         **kw: tp.Unpack[DioOptions],
     ) -> tp.Self:
         """Initialize this class from a dictionary."""
-
-        # Rely on internal cache.
-        method = make_from_dict(cls, options=options, **kw)
-        return method(dikt)
+        return diof.from_dict(cls, dikt, options=options, **kw)
 
     def to_dict(
         self,
@@ -81,10 +78,7 @@ class IOMixin:
         Returns:
             A dictionary representation of this class.
         """
-        # Rely on internal cache.
-        cls = self.__class__
-        method = make_to_dict(cls, options=options, **kw)
-        return method(self)
+        return diof.to_dict(self, options=options, **kw)
 
     def to_json_file(
         self,
