@@ -5,12 +5,21 @@ from datetime import datetime
 
 import typing_extensions as tp
 
-from ..config import NoValue, _TotalDioOptions
-from ..sentinels import CYCLE_DETECTED, CYCLE_DETECTED_T
+from ..config import _TotalDioOptions
+from ..sentinels import CYCLE_DETECTED, CYCLE_DETECTED_T, NO_VALUE, NO_VALUE_T
 from ..types import FUNC_MAKER, DataclassInstance
 from .common import get_fields, make_variable_name, strip_optional
 
 __all__ = ("SerializerData", "build_expr", "get_field_expression")
+
+
+class ParserOutput(tp.NamedTuple):
+    parser: tp.Callable | CYCLE_DETECTED_T
+    fname: str
+
+    @property
+    def was_cycle(self):
+        return self.parser is CYCLE_DETECTED
 
 
 class SerializerData(tp.NamedTuple):
@@ -25,7 +34,7 @@ class SerializerData(tp.NamedTuple):
 
     def get_parser_and_fname_for_cls(
         self, kls: type[DataclassInstance], update_ns: bool = True
-    ) -> tuple[tp.Callable | CYCLE_DETECTED_T, str]:
+    ) -> ParserOutput:
         """Return a function for making a kls, and its suggested function name."""
         # Get the maker func
         parser = self.maker_func(kls)
@@ -37,7 +46,23 @@ class SerializerData(tp.NamedTuple):
         if update_ns:
             self.namespace[fname] = parser
 
-        return parser, fname
+        return ParserOutput(parser, fname)
+
+    def new_variable(self, name: str, value: tp.Any | NO_VALUE_T = NO_VALUE):
+        """Generate a new variable name which does not conflict with any in the namespace.
+
+        Args:
+            name: _Desired_ name of the variable. Extra characters will be appended to avoid
+                  conflicts, if necessary.
+            value: (Optional) value to assign to the variable in the current namespace.
+
+        Returns:
+            The assigned name for the variable.
+        """
+        assigned_fname = make_variable_name(name, ns=self.namespace)
+        if value is not NO_VALUE:
+            self.namespace[assigned_fname] = value
+        return assigned_fname
 
 
 def build_expr(
@@ -108,14 +133,13 @@ def build_expr(
             raise RuntimeError(msg)
         # check the field options.
         discriminator = serializer_data.options["discriminator"]
-        if discriminator is NoValue:
+        if discriminator is NO_VALUE:
             msg = (
                 f"type={t}, generated via {expr_str=} is not supported."
                 " A discriminator field was not provided."
             )
-        assert isinstance(discriminator, str)
+        # assert isinstance(discriminator, str)
 
-        # base case
         if serializer_data.func_prefix == "deserialize":
             # from_dict
             key_expr = f"{expr_str}[{discriminator!r}]"
@@ -124,7 +148,7 @@ def build_expr(
             key_expr = f"{expr_str}.{discriminator!s}"
 
         # build list of types:
-        maker_map_data: dict[str, str] = {}
+        maker_map_data: dict[str, ParserOutput] = {}
         for cls_option in args:
             fields = [f for f in get_fields(cls_option) if f.name == discriminator]
             if not fields:
@@ -147,7 +171,7 @@ def build_expr(
                 raise RuntimeError(msg)
 
             # Build the mapping of discriminator values to parsers.
-            _maker_func, fname = serializer_data.get_parser_and_fname_for_cls(cls_option)
+            parser_data = serializer_data.get_parser_and_fname_for_cls(cls_option)
 
             for arg_name in discrim_args:
                 if arg_name in maker_map_data:
@@ -156,13 +180,20 @@ def build_expr(
                         f"The union options have duplicate values for {discriminator}."
                     )
                     raise RuntimeError(msg)
-                maker_map_data[arg_name] = fname
+                maker_map_data[arg_name] = parser_data
 
-        disambiguator_data = ", ".join(f"{k!r}: {v!s}" for k, v in maker_map_data.items())
-        disambiguator_literal = f"{{ {disambiguator_data} }}"
-
-        # build the final expression:
-        return f"({disambiguator_literal}[{key_expr}]({expr_str}))"
+        if any(pd.was_cycle for pd in maker_map_data.values()):
+            # Bummer, got to do this the slow af way with late binding.
+            # If we ever support emitting _statements_, then we can do this more simply.
+            disambiguator_data = ", ".join(
+                f"{k!r}: {v.fname!s}" for k, v in maker_map_data.items()
+            )
+            fname = f"{{{disambiguator_data}}}"
+        else:
+            # nice. No reference cycles, so we an do this the normal way.
+            func_map = {k: v.parser for k, v in maker_map_data.items()}
+            fname = serializer_data.new_variable("_DISAMBIGUATOR", func_map)
+        return f"{fname}[{key_expr}]({expr_str})"
 
     # 2. Handle atoms (note that we don't recurse into `build_expr`)
     if dcs.is_dataclass(t):
@@ -188,8 +219,7 @@ def build_expr(
             return f"({expr_str}).isoformat()"
 
         # from dict
-        fname = make_variable_name("_fromisoformat")
-        serializer_data.namespace[fname] = datetime.fromisoformat
+        fname = serializer_data.new_variable("_fromisoformat", datetime.fromisoformat)
         return f"{fname}({expr_str})"
 
     # 3. Fallbacks
