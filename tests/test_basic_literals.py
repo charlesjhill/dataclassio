@@ -41,7 +41,7 @@ class TestDictLiterals:
         assert addr1.to_dict(skip_if_default=True) == dikt
 
     def test_useful_message_for_missing_value(self):
-        with pytest.raises(KeyError, match="required attribute.*zip_code"):
+        with pytest.raises(KeyError, match=r"\['city'\].*zip_code"):
             _schemas.Address.from_dict({"zip_code": "12345"})
 
     def test_default_uses_dataclass_default(self):

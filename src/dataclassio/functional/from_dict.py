@@ -65,7 +65,7 @@ def make_from_dict_source_code(
         _ns = {}
 
     cls_factory_name = set_variable_in_ns("cls", cls, ns=_ns)
-    current_variable_names: set[str] = {*_ns, "dikt", "_exc"}
+    current_variable_names: set[str] = {"dikt", "_exc"}
 
     fields = get_fields(cls, include_all=True)
     field_data: dict[str, FieldSpec] = {}
@@ -117,59 +117,73 @@ def make_from_dict_source_code(
             field_has_default(f),
         )
 
+    # Assemble the final function body
     local_options = get_composite_options(call_options=call_options, field_options=_field_options)
 
-    # Assemble the final function body
+    # Start with the try/except block for required keys.
+    body = TextLines(spacer=_SPACER)
+    req_fields = [v for v in field_data.values() if not v.has_default]
+
+    if req_fields:
+        with body.indent("try:"):
+            for fs in req_fields:
+                body.append(f"{fs.var_name} = {fs.expr}")
+
+        with body.indent("except KeyError as _exc:"):
+            req_names = ", ".join(f"{n.name!r}" for n in req_fields)
+            body.append(f"missing = {{ {req_names} }} - dikt.keys()")
+            with body.indent("raise KeyError("):
+                body.append(
+                    f"f'{{sorted(missing)}} required for {cls.__name__}, missing from {{dikt=}}'"
+                )
+            body.append(") from _exc")
+
+    # Now a block for optional parameters
+    opt_fields = [v for v in field_data.values() if v.has_default]
+    for fs in opt_fields:
+        default_expr = parse_default_expression(fs.field, _ns)
+        body.append(f"{fs.var_name} = {fs.expr} if {fs.name!r} in dikt else {default_expr}")
+
+    # Now we need to build the constructor string. At this point, we have a local variable
+    #  for every initializable argument. We need to do two things:
+    # 1. Get these in the same order as the __init__ function
+    # 2. Ensure we are using keyword-argument for kw-only fields.
+    init_parts = []
+    for param in inspect.signature(cls).parameters.values():
+        fs = field_data[param.name]
+        if fs.kw_only:
+            init_parts.append(f"{fs.name}={fs.var_name}")
+        else:
+            assert param.kind not in (
+                inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.VAR_KEYWORD,
+            )
+            init_parts.append(fs.var_name)
+    data_str = ", ".join(init_parts)
+
+    # Generate code to handle extra fields.
+    extras = _handle_extra_fields(
+        cls,
+        fields,
+        local_options["extra_field_strategy"],
+        ns=_ns,
+        attribute_name=_EXTRA_FIELD_ATTR_NAME,
+    )
+
+    if extras:
+        # We have extras, so save the inst
+        body.append(f"inst = {cls_factory_name}({data_str})")
+        # N.B. For EFS.STRICT, this _could_ go at the top of the function body to bail early
+        body.extend(extras)
+        body.append("return inst")
+    else:
+        body.append(f"return {cls_factory_name}({data_str})")
+
+    # Pack it all up!
     lines = TextLines(spacer=_SPACER)
     with lines.indent(f"def {funcname}(dikt):"):
         lines.append(f'"""Deserialize a {cls.__name__} instance from a dictionary."""')
-        for fs in field_data.values():
-            if not fs.has_default:
-                # Since there is no default, wrap in a try/except.
-                err_msg = f"{fs.name!r} is a required attribute for {cls.__name__}, but was missing from {{dikt=}}."
-                with lines.indent("try:"):
-                    lines.append(f"{fs.var_name} = {fs.expr}")
-                with lines.indent("except KeyError as _exc:"):
-                    # Note the f-string!
-                    lines.append(f"raise KeyError(f{err_msg!r}) from _exc")
-            else:
-                # There is a default value. Extract its value in the else
-                with lines.indent(f"if {fs.name!r} in dikt:"):
-                    lines.append(f"{fs.var_name} = {fs.expr}")
-                with lines.indent("else:"):
-                    default_expr = parse_default_expression(fs.field, _ns)
-                    lines.append(f"{fs.var_name} = {default_expr}")
-
-        # Now we need to build the constructor string. At this point, we have a local variable
-        #  for every initializable argument. We need to do two things:
-        # 1. Get these in the same order as the __init__ function
-        # 2. Ensure we are using keyword-argument for kw-only fields.
-        init_parts = []
-        for param in inspect.signature(cls).parameters.values():
-            fs = field_data[param.name]
-            if fs.kw_only:
-                init_parts.append(f"{fs.name}={fs.var_name}")
-            else:
-                assert param.kind not in (
-                    inspect.Parameter.KEYWORD_ONLY,
-                    inspect.Parameter.VAR_KEYWORD,
-                )
-                init_parts.append(fs.var_name)
-        data_str = ", ".join(init_parts)
-
-        extras = _handle_extra_fields(
-            cls,
-            fields,
-            local_options["extra_field_strategy"],
-            ns=_ns,
-            attribute_name=_EXTRA_FIELD_ATTR_NAME,
-        )
-        if extras:
-            lines.append(f"inst = {cls_factory_name}({data_str})")
-            lines.extend(extras)
-            lines.append("return inst")
-        else:
-            lines.append(f"return {cls_factory_name}({data_str})")
+        lines.extend(body)
 
     return lines
 
