@@ -8,7 +8,7 @@ import typing_extensions as tp
 from ..config import _TotalDioOptions
 from ..sentinels import CYCLE_DETECTED, CYCLE_DETECTED_T, NO_VALUE, NO_VALUE_T
 from ..types import FUNC_MAKER, DataclassInstance
-from .common import get_fields, make_variable_name, strip_optional
+from .common import get_fields, set_variable_in_ns, strip_optional
 
 __all__ = ("SerializerData", "build_expr", "get_field_expression")
 
@@ -59,10 +59,7 @@ class SerializerData(tp.NamedTuple):
         Returns:
             The assigned name for the variable.
         """
-        assigned_fname = make_variable_name(name, ns=self.namespace)
-        if value is not NO_VALUE:
-            self.namespace[assigned_fname] = value
-        return assigned_fname
+        return set_variable_in_ns(name, value, ns=self.namespace)
 
 
 def build_expr(

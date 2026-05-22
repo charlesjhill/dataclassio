@@ -51,6 +51,9 @@ benchmark = [
     "msgspec>=0.21.1",
     "pybenchx>=1.2.0",
     "pydantic>=2.13.4",
+    "pyperf>=2.10.0",
+    "scipy>=1.17.1",
+    "tqdm>=4.67.3",
 ]
 
 [tool.pytest.ini_options]

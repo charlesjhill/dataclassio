@@ -19,6 +19,7 @@ from ..core import (
     get_fields,
     make_variable_name,
     parse_default_expression,
+    set_variable_in_ns,
 )
 from ..sentinels import CYCLE_DETECTED, CYCLE_DETECTED_T
 from ..types import EFS, DataclassInstance, TDataclass
@@ -63,9 +64,8 @@ def make_from_dict_source_code(
     if _ns is None:
         _ns = {}
 
-    cls_factory_name = make_variable_name("cls", ns=_ns)
-    _ns[cls_factory_name] = cls
-    current_variable_names: set[str] = {*_ns, "dikt", "_exc"}
+    cls_factory_name = set_variable_in_ns("cls", cls, ns=_ns)
+    current_variable_names: set[str] = {"dikt", "_exc"}
 
     fields = get_fields(cls, include_all=True)
     field_data: dict[str, FieldSpec] = {}
@@ -117,59 +117,73 @@ def make_from_dict_source_code(
             field_has_default(f),
         )
 
+    # Assemble the final function body
     local_options = get_composite_options(call_options=call_options, field_options=_field_options)
 
-    # Assemble the final function body
+    # Start with the try/except block for required keys.
+    body = TextLines(spacer=_SPACER)
+    req_fields = [v for v in field_data.values() if not v.has_default]
+
+    if req_fields:
+        with body.indent("try:"):
+            for fs in req_fields:
+                body.append(f"{fs.var_name} = {fs.expr}")
+
+        with body.indent("except KeyError as _exc:"):
+            req_names = ", ".join(f"{n.name!r}" for n in req_fields)
+            body.append(f"missing = {{ {req_names} }} - dikt.keys()")
+            with body.indent("raise KeyError("):
+                body.append(
+                    f"f'{{sorted(missing)}} required for {cls.__name__}, missing from {{dikt=}}'"
+                )
+            body.append(") from _exc")
+
+    # Now a block for optional parameters
+    opt_fields = [v for v in field_data.values() if v.has_default]
+    for fs in opt_fields:
+        default_expr = parse_default_expression(fs.field, _ns)
+        body.append(f"{fs.var_name} = {fs.expr} if {fs.name!r} in dikt else {default_expr}")
+
+    # Now we need to build the constructor string. At this point, we have a local variable
+    #  for every initializable argument. We need to do two things:
+    # 1. Get these in the same order as the __init__ function
+    # 2. Ensure we are using keyword-argument for kw-only fields.
+    init_parts = []
+    for param in inspect.signature(cls).parameters.values():
+        fs = field_data[param.name]
+        if fs.kw_only:
+            init_parts.append(f"{fs.name}={fs.var_name}")
+        else:
+            assert param.kind not in (
+                inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.VAR_KEYWORD,
+            )
+            init_parts.append(fs.var_name)
+    data_str = ", ".join(init_parts)
+
+    # Generate code to handle extra fields.
+    extras = _handle_extra_fields(
+        cls,
+        fields,
+        local_options["extra_field_strategy"],
+        ns=_ns,
+        attribute_name=_EXTRA_FIELD_ATTR_NAME,
+    )
+
+    if extras:
+        # We have extras, so save the inst
+        body.append(f"inst = {cls_factory_name}({data_str})")
+        # N.B. For EFS.STRICT, this _could_ go at the top of the function body to bail early
+        body.extend(extras)
+        body.append("return inst")
+    else:
+        body.append(f"return {cls_factory_name}({data_str})")
+
+    # Pack it all up!
     lines = TextLines(spacer=_SPACER)
     with lines.indent(f"def {funcname}(dikt):"):
         lines.append(f'"""Deserialize a {cls.__name__} instance from a dictionary."""')
-        for fs in field_data.values():
-            if not fs.has_default:
-                # Since there is no default, wrap in a try/except.
-                err_msg = f"{fs.name!r} is a required attribute for {cls.__name__}, but was missing from {{dikt=}}."
-                with lines.indent("try:"):
-                    lines.append(f"{fs.var_name} = {fs.expr}")
-                with lines.indent("except KeyError as _exc:"):
-                    # Note the f-string!
-                    lines.append(f"raise KeyError(f{err_msg!r}) from _exc")
-            else:
-                # There is a default value. Extract its value in the else
-                with lines.indent(f"if {fs.name!r} in dikt:"):
-                    lines.append(f"{fs.var_name} = {fs.expr}")
-                with lines.indent("else:"):
-                    default_expr = parse_default_expression(fs.field, _ns)
-                    lines.append(f"{fs.var_name} = {default_expr}")
-
-        # Now we need to build the constructor string. At this point, we have a local variable
-        #  for every initializable argument. We need to do two things:
-        # 1. Get these in the same order as the __init__ function
-        # 2. Ensure we are using keyword-argument for kw-only fields.
-        init_parts = []
-        for param in inspect.signature(cls).parameters.values():
-            fs = field_data[param.name]
-            if fs.kw_only:
-                init_parts.append(f"{fs.name}={fs.var_name}")
-            else:
-                assert param.kind not in (
-                    inspect.Parameter.KEYWORD_ONLY,
-                    inspect.Parameter.VAR_KEYWORD,
-                )
-                init_parts.append(fs.var_name)
-        data_str = ", ".join(init_parts)
-
-        extras = _handle_extra_fields(
-            cls,
-            fields,
-            local_options["extra_field_strategy"],
-            ns=_ns,
-            attribute_name=_EXTRA_FIELD_ATTR_NAME,
-        )
-        if extras:
-            lines.append(f"inst = {cls_factory_name}({data_str})")
-            lines.extend(extras)
-            lines.append("return inst")
-        else:
-            lines.append(f"return {cls_factory_name}({data_str})")
+        lines.extend(body)
 
     return lines
 
@@ -210,7 +224,7 @@ def _handle_extra_fields(
     fields: tp.Iterable[dcs.Field],
     strategy: EFS,
     *,
-    ns: dict,
+    ns: dict[str, tp.Any],
     dict_name: str = "dikt",
     instance_name: str = "inst",
     attribute_name: str = "_extra_fields",
@@ -223,24 +237,35 @@ def _handle_extra_fields(
     # Precompute a lookup table with the known fields for this class.
     #  N.B. This will include init=False fields, thus preventing them from being counted
     #       as an extra.
-    field_names_set_varname = f"_KNOWN_FIELDS_{cls.__name__}"
-    ns[field_names_set_varname] = frozenset(f.name for f in fields)
+    possible_field_names = frozenset(f.name for f in fields)
+    n_expected_fields = len(possible_field_names)
 
+    field_names_set_varname = set_variable_in_ns(
+        f"_KNOWN_FIELDS_{cls.__name__}", possible_field_names, ns=ns
+    )
+
+    condition_check = f"if len({dict_name}) > {n_expected_fields} or not {field_names_set_varname}.issuperset({dict_name}):"
     extra_field_expr = (
         f"{{k: v for k, v in {dict_name}.items() if k not in {field_names_set_varname}}}"
     )
 
+    if strategy == EFS.CAPTURE:
+        with lines.indent(condition_check):
+            lines.append(f"{instance_name}.{attribute_name} = {extra_field_expr}")
+        return lines
+
     if strategy == EFS.STRICT:
-        err_msg = f"Extra fields are strictly prohibited for {{{instance_name}=}}"
-        lines.append(f"extra_kw = {extra_field_expr}")
-        with lines.indent("if extra_kw:"):
+        err_msg = (
+            f"Extra fields are strictly prohibited for {{{instance_name}=}} of type {cls.__name__}"
+        )
+        with lines.indent(condition_check):
+            # N.B. We are not concerned with shadowing any pre-existing locals since we are
+            #      raising at this point anyway.
+            lines.append(f"extra_kw = {extra_field_expr}")
             lines.append(f"msg = (f'{err_msg}, but the the input dictionary had'")
             lines.append("       f' the following extra fields: {list(extra_kw)}')")
             lines.append("raise ValueError(msg)")
-        return lines
 
-    if strategy == EFS.CAPTURE:
-        lines.append(f"{instance_name}.{attribute_name} = {extra_field_expr}")
         return lines
 
     msg = f"Unexpected {strategy=}. Must be an ExtraFieldStrategy enumeration."

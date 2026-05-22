@@ -4,7 +4,7 @@ import uuid
 
 import typing_extensions as tp
 
-from ..sentinels import NO_DEFAULT, NO_DEFAULT_T
+from ..sentinels import NO_DEFAULT, NO_DEFAULT_T, NO_VALUE
 
 __all__ = (
     "get_fields",
@@ -13,6 +13,7 @@ __all__ = (
     "strip_optional",
     "parse_default_expression",
     "make_variable_name",
+    "set_variable_in_ns",
 )
 
 
@@ -62,12 +63,8 @@ def parse_default_expression(f: dcs.Field, namespace: tp.MutableMapping, precomp
 
     def _register(val: tp.Any, is_call=False):
         suffix = "factory" if is_call else "default"
-        ns_key = make_variable_name(f"{f.name}_{suffix}", ns=namespace)
-        namespace[ns_key] = val
+        ns_key = set_variable_in_ns(f"{f.name}_{suffix}", value=val, ns=namespace)
         return f"{ns_key}()" if is_call else ns_key
-
-    def _is_atom(x):
-        return x is None or isinstance(x, (int, float, str, bool))
 
     literal_map = {list: "[]", dict: "{}", tuple: "()"}
     if f.default_factory in literal_map:
@@ -82,7 +79,7 @@ def parse_default_expression(f: dcs.Field, namespace: tp.MutableMapping, precomp
     else:
         return NO_DEFAULT
 
-    if _is_atom(value):
+    if value is None or isinstance(value, (int, float, str, bool)):
         return repr(value)
     return _register(value, False)
 
@@ -113,7 +110,7 @@ def strip_optional(t: tp.TypeForm) -> tuple[tp.Any, bool]:
 def make_variable_name(
     base_name: str,
     prefix: str = "",
-    ns: tp.Iterable[str] | None = None,
+    ns: tp.Container[str] | None = None,
 ):
     """Generate a variable name that avoids shadowing any existing variable names."""
     var_name = f"{prefix}{base_name}"
@@ -126,3 +123,29 @@ def make_variable_name(
         var_name = f"{var_name}_{random_chars}"
 
     return var_name
+
+
+def set_variable_in_ns(
+    name: str,
+    value: tp.Any,
+    *,
+    ns: tp.MutableMapping[str, tp.Any],
+) -> str:
+    """Create a variable in a namespace.
+
+    If `name` is already in the namespace, it will be assigned a new name if the desired
+    value differs from the existing value.
+    """
+    existing_value = ns.get(name, NO_VALUE)
+    if (
+        existing_value is not NO_VALUE  # name was taken in the namespace already
+        and value == existing_value  # The new value is the same as the existing one
+    ):
+        # no need to populate a new slot. Just use the current one.
+        return name
+
+    assigned_fname = make_variable_name(name, ns=ns)
+    if value is not NO_VALUE:
+        ns[assigned_fname] = value
+
+    return assigned_fname
