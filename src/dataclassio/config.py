@@ -78,10 +78,10 @@ def get_composite_options(
 
 
 def get_passthrough_options(
-    field_options: dict | None = None,
+    field_options: DioOptions | None = None,
     _shallow_fields=frozenset(("discriminator", "skip_if_default")),
-):
-    passthrough_field_options = field_options.copy() if field_options else {}
+) -> DioOptions:
+    passthrough_field_options: DioOptions = field_options.copy() if field_options else {}
     for opt in _shallow_fields:
         passthrough_field_options.pop(opt, None)
     return passthrough_field_options

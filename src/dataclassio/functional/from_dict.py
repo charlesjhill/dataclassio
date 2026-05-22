@@ -19,6 +19,7 @@ from ..core import (
     get_fields,
     make_variable_name,
     parse_default_expression,
+    set_variable_in_ns,
 )
 from ..sentinels import CYCLE_DETECTED, CYCLE_DETECTED_T
 from ..types import EFS, DataclassInstance, TDataclass
@@ -63,8 +64,7 @@ def make_from_dict_source_code(
     if _ns is None:
         _ns = {}
 
-    cls_factory_name = make_variable_name("cls", ns=_ns)
-    _ns[cls_factory_name] = cls
+    cls_factory_name = set_variable_in_ns("cls", cls, ns=_ns)
     current_variable_names: set[str] = {*_ns, "dikt", "_exc"}
 
     fields = get_fields(cls, include_all=True)
@@ -210,7 +210,7 @@ def _handle_extra_fields(
     fields: tp.Iterable[dcs.Field],
     strategy: EFS,
     *,
-    ns: dict,
+    ns: dict[str, tp.Any],
     dict_name: str = "dikt",
     instance_name: str = "inst",
     attribute_name: str = "_extra_fields",
@@ -223,24 +223,35 @@ def _handle_extra_fields(
     # Precompute a lookup table with the known fields for this class.
     #  N.B. This will include init=False fields, thus preventing them from being counted
     #       as an extra.
-    field_names_set_varname = f"_KNOWN_FIELDS_{cls.__name__}"
-    ns[field_names_set_varname] = frozenset(f.name for f in fields)
+    possible_field_names = frozenset(f.name for f in fields)
+    n_expected_fields = len(possible_field_names)
 
+    field_names_set_varname = set_variable_in_ns(
+        f"_KNOWN_FIELDS_{cls.__name__}", possible_field_names, ns=ns
+    )
+
+    condition_check = f"if len({dict_name}) > {n_expected_fields} or not {field_names_set_varname}.issuperset({dict_name}):"
     extra_field_expr = (
         f"{{k: v for k, v in {dict_name}.items() if k not in {field_names_set_varname}}}"
     )
 
+    if strategy == EFS.CAPTURE:
+        with lines.indent(condition_check):
+            lines.append(f"{instance_name}.{attribute_name} = {extra_field_expr}")
+        return lines
+
     if strategy == EFS.STRICT:
-        err_msg = f"Extra fields are strictly prohibited for {{{instance_name}=}}"
-        lines.append(f"extra_kw = {extra_field_expr}")
-        with lines.indent("if extra_kw:"):
+        err_msg = (
+            f"Extra fields are strictly prohibited for {{{instance_name}=}} of type {cls.__name__}"
+        )
+        with lines.indent(condition_check):
+            # N.B. We are not concerned with shadowing any pre-existing locals since we are
+            #      raising at this point anyway.
+            lines.append(f"extra_kw = {extra_field_expr}")
             lines.append(f"msg = (f'{err_msg}, but the the input dictionary had'")
             lines.append("       f' the following extra fields: {list(extra_kw)}')")
             lines.append("raise ValueError(msg)")
-        return lines
 
-    if strategy == EFS.CAPTURE:
-        lines.append(f"{instance_name}.{attribute_name} = {extra_field_expr}")
         return lines
 
     msg = f"Unexpected {strategy=}. Must be an ExtraFieldStrategy enumeration."
