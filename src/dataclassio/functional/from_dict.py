@@ -65,7 +65,7 @@ def make_from_dict_source_code(
         _ns = {}
 
     cls_factory_name = set_variable_in_ns("cls", cls, ns=_ns)
-    current_variable_names: set[str] = {"dikt", "_exc"}
+    current_variable_names: set[str] = {"dikt", "_exc"}  # reserved locals
 
     fields = get_fields(cls, include_all=True)
     field_data: dict[str, FieldSpec] = {}

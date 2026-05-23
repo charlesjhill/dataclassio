@@ -32,6 +32,8 @@ def make_to_dict_source_code(
     _field_options: _TotalDioOptions | DioOptions | None = None,
     _ns: dict | None = None,
 ) -> TextLines:
+    from dataclassio.io_mixin import IOMixin
+
     funcname = funcname or f"serialize_{cls.__name__}"
     if _ns is None:
         _ns = {}
@@ -101,25 +103,44 @@ def make_to_dict_source_code(
     #  the bottom of the literals. If we do check some fields for their default value,
     #  we include the extra field population right before export to try keeping the "real"
     #  fields in order in the resulting dictionary.
+    if issubclass(cls, IOMixin):
+        # Subclasses of IOMixin _always_ define an _EXTRA_FIELD_ATTR_NAME,
+        #  so we don't need to use the get attr with a string literal.
+        extras_expr = f"inst.{_EXTRA_FIELD_ATTR_NAME!s}"
+        has_extras_attr = True
+    else:
+        # Otherwise, the object may not define the attribute, so use
+        extras_expr = f"getattr(inst, {_EXTRA_FIELD_ATTR_NAME!r}, {{}})"
+        has_extras_attr = False
 
     if not default_check_lines:
-        literal_lines.append(f"**getattr(inst, {_EXTRA_FIELD_ATTR_NAME!r}, {{}}),")
+        # If there are no default value checks, we can bake this directly into the dict literal
+        literal_lines.append(f"**{extras_expr},")
+    elif has_extras_attr:
+        # Need to call `dikt.update`. We have an extras_attr.
+        default_check_lines.append(f"dikt.update({extras_expr})")
     else:
-        with default_check_lines.indent(f"if hasattr(inst, {_EXTRA_FIELD_ATTR_NAME!r}):"):
-            default_check_lines.append(f"dikt.update(inst.{_EXTRA_FIELD_ATTR_NAME})")
+        # Need to call `dikt.update`. We may or may not have an extras_attr.
+        #  It is faster to use getattr(..., None)
+        default_check_lines.append(f"_extras = {extras_expr.format('None')}")
+        with default_check_lines.indent("if _extras is not None:"):
+            default_check_lines.append("dikt.update(_extras)")
 
     lines = TextLines(spacer=_SPACER)
     with lines.indent(f"def {funcname}(inst):"):
         lines.append(f'"""Serialize a {cls.__name__} instance into a dictionary."""')
-        if literal_lines:
+
+        if default_check_lines:
             with lines.indent("dikt = {"):
                 lines.extend(literal_lines)
             lines.append("}")
+            lines.extend(default_check_lines)
+            lines.append("return dikt")
         else:
-            lines.append("dikt = {}")
-        lines.extend(default_check_lines)
-        lines.append("return dikt")
-
+            # all inline.
+            with lines.indent("return {"):
+                lines.extend(literal_lines)
+            lines.append("}")
     return lines
 
 

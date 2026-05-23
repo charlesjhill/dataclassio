@@ -5,13 +5,16 @@ import typing_extensions as tp
 __all__ = ("TextLines",)
 
 
-class TextLines:
+class TextLines(tp.Sequence[str]):
     """Object to manage (possibly) indented strings."""
 
-    def __init__(self, *, spacer: str = "  "):
+    def __init__(self, initial: tp.Iterable[str] | None = None, *, spacer: str = "  "):
         self._lines: list[str] = []
         self._spacer = spacer
         self._indent_level = 0
+
+        if initial is not None:
+            self.extend(initial)
 
     def append(self, line: str, /):
         self._lines.append(f"{self._spacer * self._indent_level}{line}")
@@ -46,8 +49,21 @@ class TextLines:
     def __repr__(self):
         return f"<TextLines with {len(self)} lines of text>"
 
+    def __bool__(self):
+        return bool(self._lines)
+
+    # tp.Sequence
+
     def __len__(self):
         return len(self._lines)
 
-    def __bool__(self):
-        return bool(self._lines)
+    def __getitem__(self, key):
+        ret = self._lines[key]
+        if isinstance(ret, list):
+            tl = TextLines(ret, spacer=self._spacer)
+            tl._indent_level = self._indent_level
+            return tl
+        return ret
+
+    def __iter__(self) -> tp.Iterator[str]:
+        return iter(self._lines)

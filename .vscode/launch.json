@@ -5,10 +5,11 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Module",
+            "name": "Pytest",
             "type": "debugpy",
             "request": "launch",
-            "module": "pytest"
+            "module": "pytest",
+            // "cwd": "${workspaceFolder}"
         }
     ]
 }

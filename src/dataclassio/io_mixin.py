@@ -25,6 +25,9 @@ def _fname_or_fpointer(handle: PathOrHandle, mode="r", **kw):
 class IOMixin:
     __slots__ = _EXTRA_FIELD_ATTR_NAME
 
+    def __post_init__(self):
+        setattr(self, _EXTRA_FIELD_ATTR_NAME, {})
+
     @property
     def extra_fields(self):
         """Shallow copy of the extra fields stored in this instance from deserialization."""

@@ -567,6 +567,7 @@ class ImputedMetric(IOMixin):
 
     def __post_init__(self, unit, value):
         self.metric = Metric(value, unit)
+        super().__post_init__()
 
 
 @dataclass
@@ -577,6 +578,7 @@ class InitFalseDC(IOMixin):
 
     def __post_init__(self):
         self.c = self.a + self.b
+        super().__post_init__()
 
 
 class Role(enum.Enum):
