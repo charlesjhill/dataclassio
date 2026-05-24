@@ -4,31 +4,21 @@ from functools import partial
 
 import typing_extensions as tp
 
-from ..config import (
-    DioOptions,
-    _TotalDioOptions,
-    get_composite_options,
-    get_options_cache_key,
-    get_passthrough_options,
+from ..config2 import (
+    ResolvedConfig,
+    get_type_options,
 )
-from ..core import (
-    SerializerData,
-    TextLines,
-    field_has_default,
-    get_field_expression,
-    get_fields,
-    make_variable_name,
-    parse_default_expression,
-    set_variable_in_ns,
-)
-from ..sentinels import CYCLE_DETECTED, CYCLE_DETECTED_T
+from ..sentinels import CycleOr
 from ..types import EFS, DataclassInstance, TDataclass
-from ._shared import maker_core
+from ._shared_codegen import maker_core
+from .expression_builder import SerializerData, get_field_expression
+from .field_methods import field_has_default, get_fields, parse_default_expression
+from .lines import TextLines
+from .variables import make_variable_name, set_variable_in_ns
 
 __all__ = (
     "make_from_dict_source_code",
     "make_from_dict",
-    "from_dict",
 )
 
 _KNOWN_DESERIALIZERS: dict[tuple[type, tp.Any], tp.Callable[[tp.Mapping], tp.Any]] = {}
@@ -55,8 +45,7 @@ def make_from_dict_source_code(
     cls: type[DataclassInstance],
     *,
     funcname: str = "",
-    call_options: _TotalDioOptions | DioOptions | None = None,
-    _field_options: _TotalDioOptions | DioOptions | None = None,
+    inherited_config: ResolvedConfig,
     _ns: dict[str, tp.Any] | None = None,
 ) -> TextLines:
     """Generate the source code and necessary namespace for a from_dict deserialization method."""
@@ -70,6 +59,9 @@ def make_from_dict_source_code(
     fields = get_fields(cls, include_all=True)
     field_data: dict[str, FieldSpec] = {}
 
+    type_opts = get_type_options(cls)
+    frame_config = inherited_config.build_frame_config(type_opts)
+
     for f in fields:
         if not f.init:
             # init=False field. Don't try to read it in.
@@ -77,17 +69,10 @@ def make_from_dict_source_code(
 
         # extract and integrate field-options
         field_opts = f.metadata.get("dio")
-        resolved_options = get_composite_options(field_opts, call_options)
+        field_config = frame_config.build_field_config(field_opts)
 
-        # Remove field-shallow configuration options before they (possibly) propagate.
-        passthrough_field_opts = get_passthrough_options(field_opts)
-        cache_key = get_options_cache_key(
-            get_composite_options(
-                passthrough_field_opts,
-                call_options,
-            ),
-            "from_dict",
-        )
+        child_inherited = field_config.project_for_child()
+        cache_key = child_inherited.legacy_cache_key
 
         # Get the expression for parsing this field.
         field_expr = get_field_expression(
@@ -97,12 +82,11 @@ def make_from_dict_source_code(
                 namespace=_ns,
                 maker_func=partial(
                     make_from_dict,
-                    options=call_options,
-                    _field_options=passthrough_field_opts,
+                    inherited_config=child_inherited,
                     _ns=_ns,
                 ),
                 cache_key=cache_key,
-                options=resolved_options,
+                options=field_config.as_dict(),
                 func_prefix="deserialize",
             ),
         )
@@ -118,8 +102,6 @@ def make_from_dict_source_code(
         )
 
     # Assemble the final function body
-    local_options = get_composite_options(call_options=call_options, field_options=_field_options)
-
     # Start with the try/except block for required keys.
     body = TextLines(spacer=_SPACER)
     req_fields = [v for v in field_data.values() if not v.has_default]
@@ -165,7 +147,7 @@ def make_from_dict_source_code(
     extras = _handle_extra_fields(
         cls,
         fields,
-        local_options["extra_field_strategy"],
+        frame_config["extra_field_strategy"],
         ns=_ns,
         attribute_name=_EXTRA_FIELD_ATTR_NAME,
     )
@@ -191,31 +173,21 @@ def make_from_dict_source_code(
 def make_from_dict(
     cls: type[TDataclass],
     *,
-    options: _TotalDioOptions | DioOptions | None = None,
-    _field_options: _TotalDioOptions | DioOptions | None = None,
+    inherited_config: ResolvedConfig,
     _ns: dict[str, tp.Any] | None = None,
-    **kw: tp.Unpack[DioOptions],
-) -> tp.Callable[[tp.Mapping[str, tp.Any]], TDataclass] | CYCLE_DETECTED_T:
+) -> CycleOr[tp.Callable[[tp.Mapping[str, tp.Any]], TDataclass]]:
     """Make a from_dict deserialization method for the given dataclass.
 
     Args:
         cls: The Dataclass type to generate the deserializer for.
-        options: `DioOptions` to use to customize the code generation process. These may also
-            be provided via **kwargs. These propagate through to the fields of this dataclass
-            type.
-        _field_options: `DioOptions` that _do not_ propagate. Used for field-level configuration
-            that is applying to this object shallowly.
     """
     return maker_core(
         cls,
         _KNOWN_DESERIALIZERS,
         make_from_dict_source_code,
         "deserialize",
-        "from_dict",
-        options=options,
-        _field_options=_field_options,
+        inherited_config=inherited_config,
         _ns=_ns,
-        **kw,
     )
 
 
@@ -270,29 +242,3 @@ def _handle_extra_fields(
 
     msg = f"Unexpected {strategy=}. Must be an ExtraFieldStrategy enumeration."
     raise ValueError(msg)
-
-
-def from_dict(
-    kls: type[TDataclass],
-    dikt: tp.Mapping[str, tp.Any],
-    *,
-    options: _TotalDioOptions | DioOptions | None = None,
-    **kw: tp.Unpack[DioOptions],
-) -> TDataclass:
-    """Load a dictionary into a Dataclass.
-
-    Args:
-        cls: The type of the dataclass to generate
-        dikt: The mapping of data used to populate the dataclass.
-        options: `DioOptions` to use to customize the code generation process. These may also
-            be provided via **kwargs. These propagate through to the fields of this dataclass
-            type.
-
-    Returns:
-        A dataclass instance.
-    """
-    loader = make_from_dict(kls, options=options, **kw)
-    if loader is CYCLE_DETECTED:
-        msg = "Could not build deserializer due to reference cycle"
-        raise RuntimeError(msg)
-    return loader(dikt)

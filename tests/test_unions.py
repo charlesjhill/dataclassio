@@ -4,7 +4,7 @@ import typing as tp
 import pytest
 
 from dataclassio import IOMixin
-from dataclassio.config import FieldOpts
+from dataclassio.config2 import FieldOptions
 
 
 @dcs.dataclass
@@ -31,30 +31,11 @@ class AdminAnnotator:
 @dcs.dataclass
 class Dataset(IOMixin):
     annotators: list[HumanAnnotator | MachineAnnotator | AdminAnnotator] = dcs.field(
-        default_factory=list, metadata=FieldOpts(discriminator="type")
+        default_factory=list, metadata=FieldOptions(discriminator="type")
     )
 
 
 class TestDiscriminatedUnions:
-    def test_multiple_key_support(self):
-        payload = {
-            "annotators": [
-                {"id": "John Smith", "type": "human_annotator", "team": "ACME Corp"},
-                {"id": "Jane Doe", "type": "human", "team": "ACME Corp South"},
-            ]
-        }
-
-        ds = Dataset.from_dict(payload)
-
-        assert len(ds.annotators) == 2
-        assert isinstance(ds.annotators[0], HumanAnnotator)
-        assert ds.annotators[0].id == "John Smith"
-        assert ds.annotators[0].team == "ACME Corp"
-
-        assert isinstance(ds.annotators[1], HumanAnnotator)
-        assert ds.annotators[1].id == "Jane Doe"
-        assert ds.annotators[1].team == "ACME Corp South"
-
     def test_basic_union_deserialization(self):
         """Verify that a list with multiple types is correctly partitioned."""
         payload = {
@@ -74,6 +55,25 @@ class TestDiscriminatedUnions:
         assert isinstance(ds.annotators[1], MachineAnnotator)
         assert ds.annotators[1].id == "COCO-Net"
         assert ds.annotators[1].algorithm_type == "ResNet"
+
+    def test_multiple_key_support(self):
+        payload = {
+            "annotators": [
+                {"id": "John Smith", "type": "human_annotator", "team": "ACME Corp"},
+                {"id": "Jane Doe", "type": "human", "team": "ACME Corp South"},
+            ]
+        }
+
+        ds = Dataset.from_dict(payload)
+
+        assert len(ds.annotators) == 2
+        assert isinstance(ds.annotators[0], HumanAnnotator)
+        assert ds.annotators[0].id == "John Smith"
+        assert ds.annotators[0].team == "ACME Corp"
+
+        assert isinstance(ds.annotators[1], HumanAnnotator)
+        assert ds.annotators[1].id == "Jane Doe"
+        assert ds.annotators[1].team == "ACME Corp South"
 
     def test_multi_member_union_support(self):
         """Ensure more than two union members (e.g., 3) work as expected."""

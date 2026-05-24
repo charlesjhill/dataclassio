@@ -6,7 +6,7 @@ from pathlib import Path
 
 import typing_extensions as tp
 
-from .sentinels import CYCLE_DETECTED_T
+from .sentinels import CycleOr
 
 __all__ = (
     "PathLike",
@@ -33,4 +33,4 @@ PathLike: tp.TypeAlias = str | bytes | Path | os.PathLike
 PathOrHandle: tp.TypeAlias = PathLike | io.IOBase
 EFS = ExtraFieldStrategy
 TDataclass = tp.TypeVar("TDataclass", bound=DataclassInstance)
-FUNC_MAKER = tp.Callable[..., tp.Callable | CYCLE_DETECTED_T]
+FUNC_MAKER = tp.Callable[..., CycleOr[tp.Callable]]

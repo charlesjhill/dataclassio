@@ -4,7 +4,7 @@ import dataclasses as dcs
 import pytest
 
 from dataclassio import EFS
-from dataclassio.config import FieldOpts
+from dataclassio.config2 import FieldOptions
 from dataclassio.io_mixin import IOMixin
 
 
@@ -20,18 +20,18 @@ class Inner(IOMixin):
 
 @dcs.dataclass
 class Outer(IOMixin):
-    inner: Inner = dcs.field(metadata=FieldOpts(extra_field_strategy=EFS.CAPTURE))
-    inner2: Inner = dcs.field(metadata=FieldOpts(extra_field_strategy=EFS.STRICT))
+    inner: Inner = dcs.field(metadata=FieldOptions(extra_field_strategy=EFS.CAPTURE))
+    inner2: Inner = dcs.field(metadata=FieldOptions(extra_field_strategy=EFS.STRICT))
     inner3: Inner
 
 
 class TestExtraFieldPropagation:
     def test_capture_strategy_propagation(self):
-        """Test CASE 1: inner (EFS.CAPTURE) captures extras and propagates to child."""
+        """inner (EFS.CAPTURE) captures extras and does not propagate to child."""
         payload = {
             "inner": {
                 "extra_at_inner": "captured",
-                "innermost": {"core": "c1", "extra_at_innermost": "captured_too"},
+                "innermost": {"core": "c1", "extra_at_innermost": "not_captured"},
             },
             "inner2": {"innermost": {"core": "c2"}},  # Clean to avoid STRICT error
             "inner3": {"innermost": {"core": "c3"}},
@@ -45,11 +45,11 @@ class TestExtraFieldPropagation:
         assert not obj.inner.innermost.extra_fields
 
     def test_strict_strategy_failure(self):
-        """Test CASE 2: inner2 (EFS.STRICT) raises ValueError if any extras exist."""
+        """inner2 (EFS.STRICT) raises ValueError if any extras exist on inner2 only."""
         # Payload with extra field only in the STRICT branch
         safe_payload: dict = {
             "inner": {"innermost": {"core": "c1"}},
-            "inner2": {"innermost": {"core": "c2", "extra_key": "extra_value"}},
+            "inner2": {"innermost": {"core": "c2", "extra_key": "not_a_problem"}},
             "inner3": {"innermost": {"core": "c3"}},
         }
 
@@ -59,13 +59,13 @@ class TestExtraFieldPropagation:
 
         # It still applies to the `inner2` member
         bad_payload = copy.deepcopy(safe_payload)
-        bad_payload["inner2"]["extra_key"] = "extra_value"
+        bad_payload["inner2"]["extra_key"] = "a_big_problem"
 
         with pytest.raises(ValueError, match="extra fields"):
             Outer.from_dict(bad_payload)
 
     def test_ignore_strategy_silence(self):
-        """Test CASE 3: inner3 (Default/IGNORE) silently drops extra fields."""
+        """inner3 (Default/IGNORE) silently drops extra fields."""
         payload = {
             "inner": {"innermost": {"core": "c1"}},
             "inner2": {"innermost": {"core": "c2"}},
@@ -97,6 +97,16 @@ class TestExtraFieldPropagation:
         Ensures that Field-Level metadata takes highest priority over
         global or type-level settings.
         """
+
+        bad_payload = {
+            "inner": {"extra": "captured", "innermost": {"core": "v", "extra": "BAD"}},
+            "inner2": {"innermost": {"core": "v"}},
+            "inner3": {"innermost": {"core": "v"}},
+        }
+
+        with pytest.raises(ValueError, match="extra fields"):
+            Outer.from_dict(bad_payload, extra_field_strategy=EFS.STRICT)
+
         # Even if we pass EFS.STRICT globally, 'inner' should still CAPTURE
         # because field-level metadata is Priority 1.
         payload = {
@@ -128,7 +138,7 @@ class Child:
 class Root(IOMixin):
     id: int = 1
     # Field-level configuration target
-    child: Child = dcs.field(default_factory=Child, metadata=FieldOpts(skip_if_default=True))
+    child: Child = dcs.field(default_factory=Child, metadata=FieldOptions(skip_if_default=True))
     # Control field to ensure field-level doesn't leak sideways
     other_child: Child = dcs.field(default_factory=Child)
 
@@ -136,7 +146,7 @@ class Root(IOMixin):
 @dcs.dataclass
 class SpecificRoot(IOMixin):
     # Explicitly force-include defaults for this field only
-    child: Child = dcs.field(default_factory=Child, metadata=FieldOpts(skip_if_default=False))
+    child: Child = dcs.field(default_factory=Child, metadata=FieldOptions(skip_if_default=False))
 
 
 class TestSkipDefaultsPropagation:
@@ -162,7 +172,7 @@ class TestSkipDefaultsPropagation:
         """Call-level True should propagate to the entire tree."""
         obj = Root()
         # We explicitly set skip_if_default=True at the call level
-        result = obj.to_dict(skip_if_default=True)
+        result = obj.to_dict(skip_defaults=True)
 
         # Since the object is completely default-valued, this should be the empty dict.
         assert result == {}
@@ -171,13 +181,13 @@ class TestSkipDefaultsPropagation:
         """If field-level is False but call-level is True, field-level wins."""
 
         obj = SpecificRoot()
-        result = obj.to_dict(skip_if_default=True)
+        result = obj.to_dict(skip_defaults=True)
 
         # Even though child has a default value, it is kept. It's members are both
         #  default valued though, and thus discarded.
         assert result == {"child": {}}
 
         obj = SpecificRoot(Child(name="new_name"))
-        result = obj.to_dict(skip_if_default=True)
+        result = obj.to_dict(skip_defaults=True)
 
         assert result == {"child": {"name": "new_name"}}
