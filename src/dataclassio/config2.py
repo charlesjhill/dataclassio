@@ -82,7 +82,7 @@ SKIP_IF_DEFAULT = OptionSpec(
         # S.TYPE: P.PARENT,
         S.FIELD: P.LOCAL,
     },
-    to_str=lambda _: "skip_if_default",
+    to_str=lambda x: f"skip_if_default_{x}",
 )
 
 SKIP_DEFAULTS = OptionSpec(
@@ -94,7 +94,7 @@ SKIP_DEFAULTS = OptionSpec(
         S.TYPE: P.LOCAL,
         S.FIELD: P.DEEP_ONCE,
     },
-    to_str=lambda _: "skip_defaults",
+    to_str=lambda x: f"skip_defaults_{x}",
 )
 
 INCLUDE_SRC_IN_DOCSTRING = OptionSpec(

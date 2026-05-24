@@ -68,9 +68,9 @@ def make_to_dict_source_code(
         #  field(skip_defaults=...) is meant for the next frame, not this one.
 
         skip_this_field: bool = False
-        if (s := field_config.as_dict()["skip_if_default"]) is not NO_VALUE:
+        if (s := field_config["skip_if_default"]) is not NO_VALUE:
             skip_this_field = s
-        elif (s := frame_config.as_dict()["skip_defaults"]) is not NO_VALUE:
+        elif (s := frame_config["skip_defaults"]) is not NO_VALUE:
             skip_this_field = s
 
         if skip_this_field and field_has_default(f):
