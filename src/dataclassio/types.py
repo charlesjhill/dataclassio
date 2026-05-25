@@ -29,7 +29,7 @@ class ExtraFieldStrategy(Enum):
     CAPTURE = "capture"
 
 
-PathLike: tp.TypeAlias = str | bytes | Path | os.PathLike
+PathLike: tp.TypeAlias = str | Path | os.PathLike
 PathOrHandle: tp.TypeAlias = PathLike | io.IOBase
 EFS = ExtraFieldStrategy
 TDataclass = tp.TypeVar("TDataclass", bound=DataclassInstance)

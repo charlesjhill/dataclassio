@@ -4,12 +4,10 @@ from functools import partial
 
 import typing_extensions as tp
 
-from ..config2 import (
-    ResolvedConfig,
-    get_type_options,
-)
-from ..sentinels import CycleOr
-from ..types import EFS, DataclassInstance, TDataclass
+from dataclassio.config2 import ResolvedConfig, get_type_options
+from dataclassio.sentinels import CycleOr
+from dataclassio.types import EFS, DataclassInstance, TDataclass
+
 from ._shared_codegen import maker_core
 from .expression_builder import SerializerData, get_field_expression
 from .field_methods import field_has_default, get_fields, parse_default_expression
@@ -216,7 +214,10 @@ def _handle_extra_fields(
         f"_KNOWN_FIELDS_{cls.__name__}", possible_field_names, ns=ns
     )
 
-    condition_check = f"if len({dict_name}) > {n_expected_fields} or not {field_names_set_varname}.issuperset({dict_name}):"
+    condition_check = (
+        f"if len({dict_name}) > {n_expected_fields} "
+        "or not {field_names_set_varname}.issuperset({dict_name}):"
+    )
     extra_field_expr = (
         f"{{k: v for k, v in {dict_name}.items() if k not in {field_names_set_varname}}}"
     )

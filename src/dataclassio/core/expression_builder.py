@@ -5,9 +5,10 @@ from datetime import datetime
 
 import typing_extensions as tp
 
-from ..config2 import DioOptions
-from ..sentinels import CYCLE_DETECTED, NO_VALUE, CycleOr, NoValueOr
-from ..types import FUNC_MAKER, DataclassInstance
+from dataclassio.config2 import DioOptions
+from dataclassio.sentinels import CYCLE_DETECTED, NO_VALUE, CycleOr, NoValueOr
+from dataclassio.types import FUNC_MAKER, DataclassInstance
+
 from .field_methods import get_fields
 from .variables import set_variable_in_ns
 
@@ -153,7 +154,8 @@ def build_expr(
             if not fields:
                 msg = (
                     f"type={t}, generated via {expr_str=} is not supported."
-                    f"Union option {cls_option} does not have a field with the name {discriminator}."
+                    f"Union option {cls_option} does not have a field with the"
+                    f" name {discriminator}."
                 )
                 raise RuntimeError(msg)
             # get the type.
@@ -165,7 +167,8 @@ def build_expr(
             ):
                 msg = (
                     f"type={t}, generated via {expr_str=} is not supported."
-                    f"Union option {cls_option} has a field with name {discriminator}, but it is not a Literal with string arguments."
+                    f"Union option {cls_option} has a field with name {discriminator}, but it is"
+                    " not a Literal with string arguments."
                 )
                 raise RuntimeError(msg)
 
@@ -249,7 +252,8 @@ def strip_optional(t: tp.TypeForm) -> tuple[tp.Any, bool]:
     """Check if a type annotation is an optional and if so, remove it.
 
     Returns:
-        (type, bool): Corresponds to (non-None arguments of the type, flag if the type was an Optional)
+        (type, bool): Corresponds to (non-None arguments of the type, flag if the type was
+            an Optional)
     """
     origin, args = tp.get_origin(t), tp.get_args(t)
     if not (origin is tp.Union or origin is types.UnionType):
@@ -265,4 +269,4 @@ def strip_optional(t: tp.TypeForm) -> tuple[tp.Any, bool]:
         return non_none_args[0], True
 
     # len(non_none_args) > 1
-    return tp.Union[non_none_args], True
+    return tp.Union[non_none_args], True  # noqa: UP007

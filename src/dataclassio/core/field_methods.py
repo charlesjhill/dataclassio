@@ -2,7 +2,8 @@ import dataclasses as dcs
 
 import typing_extensions as tp
 
-from ..sentinels import NO_DEFAULT, NoDefaultOr
+from dataclassio.sentinels import NO_DEFAULT, NoDefaultOr
+
 from .variables import set_variable_in_ns
 
 __all__ = ("get_fields", "get_field_default", "field_has_default", "parse_default_expression")

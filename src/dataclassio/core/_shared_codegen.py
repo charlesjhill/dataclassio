@@ -2,9 +2,10 @@ import linecache
 
 import typing_extensions as tp
 
-from ..config2 import ResolvedConfig
-from ..sentinels import CYCLE_DETECTED, IN_PROGRESS, CycleOr
-from ..types import DataclassInstance
+from dataclassio.config2 import ResolvedConfig
+from dataclassio.sentinels import CYCLE_DETECTED, IN_PROGRESS, CycleOr
+from dataclassio.types import DataclassInstance
+
 from .field_methods import get_fields
 from .lines import TextLines
 

@@ -1,10 +1,11 @@
+import bisect
 import dataclasses as dcs
 from enum import Enum, auto
 
 import typing_extensions as tp
 
-from dataclassio.sentinels import NO_VALUE, NoValueOr
-from dataclassio.types import EFS
+from .sentinels import NO_VALUE, NoValueOr
+from .types import EFS
 
 __all__ = (
     "CallOptions",
@@ -22,9 +23,10 @@ __all__ = (
 class Scope(Enum):
     """Option scopes. Defines where options may be set."""
 
-    CALL = 10
-    TYPE = 20
-    FIELD = 30
+    # Precedence rankings (lower is higher precedence)
+    CALL = 3
+    TYPE = 2
+    FIELD = 1
 
 
 class Propagation(Enum):
@@ -119,6 +121,8 @@ REGISTRY: dict[str, OptionSpec] = {o.name: o for o in ALL_OPTIONS}
 ## User-facing APIs for Call/Type/Field Options
 ## ----------------------------------------------------
 
+# See scripts/generate_option_typed_dicts.py to generate these from `ALL_OPTIONS`.
+
 
 class CallOptions(tp.TypedDict, total=False):
     extra_field_strategy: EFS
@@ -159,25 +163,42 @@ def FieldOptions(**kw: tp.Unpack[_FieldOptions]):
 class ConfigEntry:
     """A single, resolved option value, tagged with its origin."""
 
-    value: tp.Any
-    source: Scope
+    N_OBJECTS: tp.ClassVar[int] = 0
+
+    name: str
+    value: tp.Hashable
+    scope: Scope
+    propagation: Propagation
 
     # Flag if this entry arrived via a DEEP_ONCE hop and should be dropped
     #  on the next projection. While "consumed", it can participate in
     #  codegen of the current frame and continues to override CALL-sourced values.
     consumed: bool = False
 
+    # Tiebreaker
+    seq: int = dcs.field(init=False, default_factory=lambda: ConfigEntry.N_OBJECTS)
+
+    def __post_init__(self):
+        # TODO: Threadsafety
+        ConfigEntry.N_OBJECTS += 1
+
     @property
     def precedence(self):
+        # use -self.seq so that newer entries come first in sorted order.
         if self.consumed:
-            return 40
-        return self.source.value
+            return (0, -self.seq)
+        return (self.scope.value, -self.seq)
+
+    def cache_key(self) -> tp.Hashable:
+        return (self.name, self.value, self.scope, self.consumed)
 
 
-def _make_entries(mapping: tp.Mapping[str, tp.Any] | None, source: Scope):
+def _yield_entries(
+    mapping: tp.Mapping[str, tp.Any] | None, source: Scope
+) -> tp.Generator[ConfigEntry]:
     if not mapping:
-        return {}
-    out: dict[str, ConfigEntry] = {}
+        return
+
     for opt_name, opt_value in mapping.items():
         spec = REGISTRY.get(opt_name)
         if spec is None:
@@ -189,47 +210,42 @@ def _make_entries(mapping: tp.Mapping[str, tp.Any] | None, source: Scope):
                 f"allowed scopes: {[s.name for s in spec.scopes]}"
             )
             raise ValueError(msg)
-        out[opt_name] = ConfigEntry(value=opt_value, source=source)
-    return out
+
+        yield ConfigEntry(
+            name=opt_name,
+            value=opt_value,
+            scope=source,
+            propagation=spec.scopes[source],
+        )
 
 
-@dcs.dataclass(frozen=True)
 class ResolvedConfig:
-    """An immutable, fully-resolved view of options for a single codegen frame."""
+    """A fully-resolved view of options for a single codegen frame."""
 
-    call_layer: tp.Mapping[str, ConfigEntry] = dcs.field(default_factory=dict)
-    overlay_layer: tp.Mapping[str, ConfigEntry] = dcs.field(default_factory=dict)
+    __slots__ = ("_entries",)
+
+    def __init__(self, entries: tp.Mapping[str, tp.Sequence[ConfigEntry]] | None = None) -> None:
+        # _entries is a mapping of option names to a list of values provided for that
+        #  option, sorted by precedence order (high precendence first).
+        self._entries: tp.Mapping[str, tp.Sequence[ConfigEntry]] = entries or {}
 
     @classmethod
     def from_call(cls, call_options: CallOptions | None = None) -> tp.Self:
-        entries = _make_entries(call_options, Scope.CALL)
-        # CALL-sourced options with LOCAL propagation (if any ever exist)
-        # belong in the overlay, not the persistent base. Today all CALL
-        # options are DEEP, but we encode the rule explicitly:
-        call_layer: dict[str, ConfigEntry] = {}
-        overlay: dict[str, ConfigEntry] = {}
-        for name, entry in entries.items():
-            prop = REGISTRY[name].scopes[Scope.CALL]
-            if prop is Propagation.DEEP:
-                call_layer[name] = entry
-            else:
-                overlay[name] = entry
-        return cls(call_layer, overlay)
+        inst = cls()
 
-    def _effective_entry(self, name: str):
-        return self.overlay_layer.get(name) or self.call_layer.get(name)
+        entries = _yield_entries(call_options, Scope.CALL)
+        return inst._with_overlay(entries)
 
     def __getitem__(self, key: str) -> tp.Any:
-        entry = self._effective_entry(key)
+        entry = self._entries.get(key)
         if entry is None:
-            spec = REGISTRY[key]
-            return spec.default
-        return entry.value
+            return REGISTRY[key].default
+        return entry[0].value
 
     def __contains__(self, name: str) -> bool:
-        return name in self.overlay_layer or name in self.call_layer
+        return name in self._entries
 
-    def as_dict(self) -> DioOptions:
+    def as_dict(self):
         return DioOptions(
             extra_field_strategy=self["extra_field_strategy"],
             discriminator=self["discriminator"],
@@ -238,80 +254,61 @@ class ResolvedConfig:
             include_src_in_docstring=self["include_src_in_docstring"],
         )
 
-    @property
-    def cache_key(self) -> str:
-        def freeze(layer: tp.Mapping[str, ConfigEntry]):
-            str_data = []
+    def cache_key(self):
+        return tuple(
+            (name, tuple(e.cache_key() for e in bucket))
+            for name, bucket in sorted(self._entries.items())
+        )
 
-            for opt_name, entry in sorted(layer.items()):
-                option_spec = REGISTRY[opt_name]
+    def func_postfix(self, key: NoValueOr[tuple] = NO_VALUE) -> str:
+        if key is NO_VALUE:
+            key = self.cache_key()
 
-                if entry.value != option_spec.default:
-                    str_data.append(option_spec.to_str(entry.value))
+        if not key:
+            return ""
 
-                    if entry.consumed:
-                        str_data.append("used")
-
-            return str_data
-
-        call_opts = freeze(self.call_layer)
-        overlay_opts = freeze(self.overlay_layer)
-
-        if call_opts:
-            call_opts.append("call")
-        if overlay_opts:
-            overlay_opts.append("overlay")
-
-        all_opts = [*call_opts, *overlay_opts]
-
-        if len(all_opts) >= 2:
-            return f"_{'__'.join(all_opts)}"
-
-        if len(all_opts) == 1:
-            return f"_{all_opts[0]}"
-
-        return ""
+        digest = str(abs(hash(key)))[:6]
+        return f"_{digest!s}"
 
     @property
     def legacy_cache_key(self) -> tuple[tp.Hashable, str]:
-        k = self.cache_key
-        return k, k
+        k = self.cache_key()
+        return k, self.func_postfix(k)
 
-    def _with_overlay(self, new_entries: tp.Mapping[str, ConfigEntry]) -> "ResolvedConfig":
-        """Merge new entries into the overlay using precedence rules.
+    def _with_overlay(self: tp.Self, new_entries: tp.Iterable[ConfigEntry]) -> tp.Self:
+        """Merge new entries into the config"""
+        kls = type(self)
 
-        The call layer is untouched.
-        """
-        merged: dict[str, ConfigEntry] = dict(self.overlay_layer)
-        for name, entry in new_entries.items():
-            existing = merged.get(name)
-            if existing is None or entry.precedence >= existing.precedence:
-                merged[name] = entry
+        # Functionally a deep copy.
+        out = {k: list(v) for k, v in self._entries.items()}
+        for new_entry in new_entries:
+            bucket = out.setdefault(new_entry.name, [])
+            bisect.insort(bucket, new_entry, key=lambda x: x.precedence)
 
-        return ResolvedConfig(self.call_layer, merged)
+        return kls({k: tuple(v) for k, v in out.items()})
 
-    def project_for_child(self) -> "ResolvedConfig":
+    def project_for_child(self) -> tp.Self:
         """Compute config that should be inherited by codegen frame of a nested type.
 
         This method will:
-        - Drop LOCAL
+        - Keep DEEP or unconsumed DEEP_ONCE options, marking them as consumed.
+        - Drop DEEP_ONCE options that were consumed already.
+        - Drop LOCAL or unknown propagation options
         """
-        kept: dict[str, ConfigEntry] = {}
-        for name, entry in self.overlay_layer.items():
-            # A consumed (i.e., DEEP_ONCE survivor) entry has already used its
-            #  hop. It does not propagate further regardless of its original
-            #  source's declared propagation.
-            if entry.consumed:
-                continue
-            spec = REGISTRY[name]
+        kls = self.__class__
+        out = {}
+        for name, bucket in self._entries.items():
+            kept = []
+            for e in bucket:
+                if e.propagation is P.DEEP:
+                    kept.append(e)
+                elif e.propagation is P.DEEP_ONCE and not e.consumed:
+                    kept.append(dcs.replace(e, consumed=True))
+                # Ignore everything else: LOCAL + consumed DEEP_ONCE.
+            if kept:
+                out[name] = tuple(kept)
 
-            prop = spec.scopes.get(entry.source)
-            if prop is P.DEEP:
-                kept[name] = entry
-            elif prop is P.DEEP_ONCE:
-                kept[name] = dcs.replace(entry, consumed=True)
-            # Unknown or LOCAL propagation gets dropped
-        return ResolvedConfig(self.call_layer, kept)
+        return kls(out)
 
     def build_frame_config(
         self,
@@ -327,7 +324,7 @@ class ResolvedConfig:
               DEEP_ONCE > FIELD > TYPE > CALL > DEFAULTS
           which is enforced by ConfigEntry.precendence()
         """
-        type_entries = _make_entries(type_opts_for_target, Scope.TYPE)
+        type_entries = _yield_entries(type_opts_for_target, Scope.TYPE)
 
         # overlay handles precedence: DEEP_ONCE survivor > TYPE > CALL
         return self._with_overlay(type_entries)
@@ -341,7 +338,7 @@ class ResolvedConfig:
         Field-sourced entries have precedence between DEEP_ONCE survivors.
         """
 
-        field_entries = _make_entries(field_opts, Scope.FIELD)
+        field_entries = _yield_entries(field_opts, Scope.FIELD)
         return self._with_overlay(field_entries)
 
 

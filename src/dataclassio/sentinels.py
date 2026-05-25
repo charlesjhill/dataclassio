@@ -17,7 +17,7 @@ CYCLE_DETECTED: tp.Final = _Sentinels.CYCLE_DETECTED
 
 
 T = tp.TypeVar("T")
-NoValueOr: tp.TypeAlias = tp.Union[T, tp.Literal[_Sentinels.NO_VALUE]]
-NoDefaultOr: tp.TypeAlias = tp.Union[T, tp.Literal[_Sentinels.NO_DEFAULT]]
-InProgressOr: tp.TypeAlias = tp.Union[T, tp.Literal[_Sentinels.IN_PROGRESS]]
-CycleOr: tp.TypeAlias = tp.Union[T, tp.Literal[_Sentinels.CYCLE_DETECTED]]
+NoValueOr: tp.TypeAlias = T | tp.Literal[_Sentinels.NO_VALUE]
+NoDefaultOr: tp.TypeAlias = T | tp.Literal[_Sentinels.NO_DEFAULT]
+InProgressOr: tp.TypeAlias = T | tp.Literal[_Sentinels.IN_PROGRESS]
+CycleOr: tp.TypeAlias = T | tp.Literal[_Sentinels.CYCLE_DETECTED]

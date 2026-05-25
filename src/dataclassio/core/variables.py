@@ -2,7 +2,7 @@ import uuid
 
 import typing_extensions as tp
 
-from ..sentinels import NO_VALUE
+from dataclassio.sentinels import NO_VALUE, NoValueOr
 
 __all__ = (
     "make_variable_name",
@@ -30,7 +30,7 @@ def make_variable_name(
 
 def set_variable_in_ns(
     name: str,
-    value: tp.Any,
+    value: NoValueOr[tp.Any],
     *,
     ns: tp.MutableMapping[str, tp.Any],
 ) -> str:

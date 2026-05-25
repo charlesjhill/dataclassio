@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import typing_extensions as tp
 
@@ -17,7 +18,7 @@ def _fname_or_fpointer(handle: PathOrHandle, mode="r", **kw):
         yield handle
         return
 
-    with open(handle, mode=mode, **kw) as f:
+    with Path(handle).open(mode=mode, **kw) as f:
         yield f
 
 

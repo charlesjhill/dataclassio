@@ -2,9 +2,10 @@ from functools import partial
 
 import typing_extensions as tp
 
-from ..config2 import ResolvedConfig, get_type_options
-from ..sentinels import NO_VALUE, CycleOr
-from ..types import DataclassInstance, TDataclass
+from dataclassio.config2 import ResolvedConfig, get_type_options
+from dataclassio.sentinels import NO_VALUE, CycleOr
+from dataclassio.types import DataclassInstance, TDataclass
+
 from ._shared_codegen import maker_core
 from .expression_builder import SerializerData, get_field_expression
 from .field_methods import field_has_default, get_fields, parse_default_expression
@@ -68,9 +69,9 @@ def make_to_dict_source_code(
         #  field(skip_defaults=...) is meant for the next frame, not this one.
 
         skip_this_field: bool = False
-        if (s := field_config["skip_if_default"]) is not NO_VALUE:
-            skip_this_field = s
-        elif (s := frame_config["skip_defaults"]) is not NO_VALUE:
+        if (s := field_config["skip_if_default"]) is not NO_VALUE or (
+            s := frame_config["skip_defaults"]
+        ) is not NO_VALUE:
             skip_this_field = s
 
         if skip_this_field and field_has_default(f):
