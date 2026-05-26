@@ -113,7 +113,7 @@ def build_expr(
         return f"[{inner_expr} for x in {expr_str}]"
 
     if origin in (dict, tp.Mapping):
-        k_type, v_type = args if args else (tp.Any, tp.Any)
+        k_type, v_type = args or (tp.Any, tp.Any)
         k_expr = build_expr(k_type, "k", serializer_data=serializer_data)
         v_expr = build_expr(v_type, "v", serializer_data=serializer_data)
         if k_expr == "k" and v_expr == "v":

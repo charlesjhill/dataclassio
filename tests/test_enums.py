@@ -51,5 +51,5 @@ class TestEnumSupport:
         """
         data = {"team_name": "Ghost", "access_level": "super_admin"}
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError):  # noqa: PT011
             Team.from_dict(data)
