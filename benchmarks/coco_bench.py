@@ -9,10 +9,7 @@ from dataclassio.types import EFS
 
 def load_coco_dict() -> dict:
     pth = (__file__ / Path("../../test_data/instances_val2017.json")).resolve()
-
-    with pth.open("rb") as fp:
-        buf = fp.read()
-    return msgspec.json.decode(buf)
+    return msgspec.json.decode(pth.read_bytes())
 
 
 loaders = Bench("coco_roundtrip")
@@ -39,7 +36,7 @@ def test_dio_capture():
 def test_dio_to(b: BenchContext):
     obj = sch.Coco.from_dict(coco_data)
     b.start()
-    obj.to_dict(skip_if_default=False)
+    obj.to_dict(skip_defaults=False)
     b.end()
 
 
@@ -47,5 +44,5 @@ def test_dio_to(b: BenchContext):
 def test_dio_to_skip(b: BenchContext):
     obj = sch.Coco.from_dict(coco_data)
     b.start()
-    obj.to_dict(skip_if_default=True)
+    obj.to_dict(skip_defaults=True)
     b.end()

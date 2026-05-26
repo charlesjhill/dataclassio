@@ -107,12 +107,10 @@ def print_to_dict_source_code(
 ) -> dict:
     opts = options or {}
     opts.update(kw)
-    cfg = ResolvedConfig.from_call(opts)
+    cfg = ResolvedConfig.from_call(opts).build_frame_config(cls)
 
     ns = {}
-    src = dump_core.make_to_dict_source_code(
-        cls, funcname=f"dump_{cls.__name__}", inherited_config=cfg, _ns=ns
-    )
+    src = dump_core.make_to_dict_source_code(cls, frame_config=cfg, _ns=ns)
     print(src)
     return ns
 
@@ -125,11 +123,9 @@ def print_from_dict_source_code(
 ) -> dict:
     opts = options or {}
     opts.update(kw)
-    cfg = ResolvedConfig.from_call(opts)
+    cfg = ResolvedConfig.from_call(opts).build_frame_config(cls)
 
     ns = {}
-    src = load_core.make_from_dict_source_code(
-        cls, funcname=f"load_{cls.__name__}", inherited_config=cfg, _ns=ns
-    )
+    src = load_core.make_from_dict_source_code(cls, frame_config=cfg, _ns=ns)
     print(src)
     return ns

@@ -3,6 +3,7 @@ import dataclasses as dcs
 import typing_extensions as tp
 
 from dataclassio.sentinels import NO_DEFAULT, NoDefaultOr
+from dataclassio.types import TNamespace
 
 from .variables import set_variable_in_ns
 
@@ -38,7 +39,7 @@ def field_has_default(f: dcs.Field):
 
 
 def parse_default_expression(
-    f: dcs.Field, namespace: tp.MutableMapping, precompute_factory=False
+    f: dcs.Field, namespace: TNamespace, precompute_factory=False
 ) -> NoDefaultOr[str]:
     """Get an expression (and populate the namespace) with the default value for a field.
 

@@ -30,11 +30,6 @@ def test_dio():
     sch.Coco.from_dict(coco_data)
 
 
-@loaders.bench(name="dio_fast")
-def test_locals():
-    sch.Coco.fast_from_dict(coco_data)
-
-
 @loaders.bench(name="pydantic")
 def test_pyd():
     CocoPyd.model_validate(coco_data)

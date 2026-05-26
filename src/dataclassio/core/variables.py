@@ -3,6 +3,7 @@ import uuid
 import typing_extensions as tp
 
 from dataclassio.sentinels import NO_VALUE, NoValueOr
+from dataclassio.types import TNamespace
 
 __all__ = (
     "make_variable_name",
@@ -32,7 +33,7 @@ def set_variable_in_ns(
     name: str,
     value: NoValueOr[tp.Any],
     *,
-    ns: tp.MutableMapping[str, tp.Any],
+    ns: TNamespace,
 ) -> str:
     """Create a variable in a namespace.
 

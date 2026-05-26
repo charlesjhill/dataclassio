@@ -7,7 +7,7 @@ import typing_extensions as tp
 
 from dataclassio.config2 import DioOptions
 from dataclassio.sentinels import CYCLE_DETECTED, NO_VALUE, CycleOr, NoValueOr
-from dataclassio.types import FUNC_MAKER, DataclassInstance
+from dataclassio.types import DataclassInstance, FunctionMaker
 
 from .field_methods import get_fields
 from .variables import set_variable_in_ns
@@ -29,7 +29,7 @@ class SerializerData(tp.NamedTuple):
 
     registry: tp.MutableMapping
     namespace: tp.MutableMapping
-    maker_func: FUNC_MAKER
+    maker_func: FunctionMaker
     cache_key: tuple[tp.Hashable, str]
     options: DioOptions
     func_prefix: tp.Literal["deserialize", "serialize"]
@@ -199,6 +199,7 @@ def build_expr(
 
     # 2. Handle atoms (note that we don't recurse into `build_expr`)
     if dcs.is_dataclass(t):
+        assert isinstance(t, type)
         _, fname = serializer_data.get_parser_and_fname_for_cls(t, update_ns=True)
         return f"{fname}({expr_str})"
 
@@ -245,7 +246,10 @@ def get_field_expression(f: dcs.Field, serializer_data: SerializerData) -> str:
         msg = f"Unsupported {serializer_data.func_prefix=}. Expected 'deserialize' or 'serialize'."
         raise ValueError(msg)
 
-    return build_expr(f.type, access_expr, serializer_data=serializer_data)
+    ft = f.type
+    assert not isinstance(ft, str)
+
+    return build_expr(ft, access_expr, serializer_data=serializer_data)
 
 
 def strip_optional(t: tp.TypeForm) -> tuple[tp.Any, bool]:

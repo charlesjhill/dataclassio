@@ -6,7 +6,12 @@ from pathlib import Path
 
 import typing_extensions as tp
 
-from .sentinels import CycleOr
+from dataclassio.sentinels import CycleOr
+
+if tp.TYPE_CHECKING:
+    from dataclassio.config2 import ResolvedConfig
+    from dataclassio.core.lines import TextLines
+
 
 __all__ = (
     "PathLike",
@@ -15,7 +20,9 @@ __all__ = (
     "EFS",
     "DataclassInstance",
     "TDataclass",
-    "FUNC_MAKER",
+    "SourceCodeMaker",
+    "TNamespace",
+    "FunctionMaker",
 )
 
 
@@ -29,8 +36,21 @@ class ExtraFieldStrategy(Enum):
     CAPTURE = "capture"
 
 
-PathLike: tp.TypeAlias = str | Path | os.PathLike
-PathOrHandle: tp.TypeAlias = PathLike | io.IOBase
 EFS = ExtraFieldStrategy
 TDataclass = tp.TypeVar("TDataclass", bound=DataclassInstance)
-FUNC_MAKER = tp.Callable[..., CycleOr[tp.Callable]]
+PathLike: tp.TypeAlias = str | Path | os.PathLike
+PathOrHandle: tp.TypeAlias = PathLike | io.IOBase
+TNamespace: tp.TypeAlias = dict[str, tp.Any]
+
+
+class SourceCodeMaker(tp.Protocol):
+    def __call__(
+        self,
+        cls: type[DataclassInstance],
+        *,
+        frame_config: "ResolvedConfig",
+        _ns: TNamespace | None = None,
+    ) -> "TextLines": ...
+
+
+FunctionMaker: tp.TypeAlias = tp.Callable[[type[TDataclass]], CycleOr[tp.Callable]]

@@ -2,9 +2,9 @@ from functools import partial
 
 import typing_extensions as tp
 
-from dataclassio.config2 import ResolvedConfig, get_type_options
+from dataclassio.config2 import ResolvedConfig
 from dataclassio.sentinels import NO_VALUE, CycleOr
-from dataclassio.types import DataclassInstance, TDataclass
+from dataclassio.types import DataclassInstance, TDataclass, TNamespace
 
 from ._shared_codegen import maker_core
 from .expression_builder import SerializerData, get_field_expression
@@ -19,18 +19,13 @@ _SPACER = "  "
 def make_to_dict_source_code(
     cls: type[DataclassInstance],
     *,
-    funcname: str = "",
-    inherited_config: ResolvedConfig,
-    _ns: dict | None = None,
+    frame_config: ResolvedConfig,
+    _ns: TNamespace | None = None,
 ) -> TextLines:
     from dataclassio.io_mixin import IOMixin
 
-    funcname = funcname or f"serialize_{cls.__name__}"
     if _ns is None:
         _ns = {}
-
-    type_opts = get_type_options(cls)
-    frame_config = inherited_config.build_frame_config(type_opts)
 
     # Start building up the output.
     # We are going to serialize objects. We also need to check if they
@@ -115,6 +110,7 @@ def make_to_dict_source_code(
             default_check_lines.append("dikt.update(_extras)")
 
     lines = TextLines(spacer=_SPACER)
+    funcname = frame_config.get_func_name(cls, "serialize")
     with lines.indent(f"def {funcname}(inst):"):
         lines.append(f'"""Serialize a {cls.__name__} instance into a dictionary."""')
 
@@ -136,7 +132,7 @@ def make_to_dict(
     cls: type[TDataclass],
     *,
     inherited_config: ResolvedConfig,
-    _ns: dict | None = None,
+    _ns: TNamespace | None = None,
 ) -> CycleOr[tp.Callable[[TDataclass], dict[str, tp.Any]]]:
     """Make a to_dict serialization method for the given dataclass.
 

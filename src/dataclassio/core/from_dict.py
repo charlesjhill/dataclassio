@@ -4,9 +4,9 @@ from functools import partial
 
 import typing_extensions as tp
 
-from dataclassio.config2 import ResolvedConfig, get_type_options
+from dataclassio.config2 import ResolvedConfig
 from dataclassio.sentinels import CycleOr
-from dataclassio.types import EFS, DataclassInstance, TDataclass
+from dataclassio.types import EFS, DataclassInstance, TDataclass, TNamespace
 
 from ._shared_codegen import maker_core
 from .expression_builder import SerializerData, get_field_expression
@@ -42,12 +42,10 @@ class FieldSpec(tp.NamedTuple):
 def make_from_dict_source_code(
     cls: type[DataclassInstance],
     *,
-    funcname: str = "",
-    inherited_config: ResolvedConfig,
-    _ns: dict[str, tp.Any] | None = None,
+    frame_config: ResolvedConfig,
+    _ns: TNamespace | None = None,
 ) -> TextLines:
     """Generate the source code and necessary namespace for a from_dict deserialization method."""
-    funcname = funcname or f"deserialize_{cls.__name__}"
     if _ns is None:
         _ns = {}
 
@@ -56,9 +54,6 @@ def make_from_dict_source_code(
 
     fields = get_fields(cls, include_all=True)
     field_data: dict[str, FieldSpec] = {}
-
-    type_opts = get_type_options(cls)
-    frame_config = inherited_config.build_frame_config(type_opts)
 
     for f in fields:
         if not f.init:
@@ -160,6 +155,7 @@ def make_from_dict_source_code(
         body.append(f"return {cls_factory_name}({data_str})")
 
     # Pack it all up!
+    funcname = frame_config.get_func_name(cls, "deserialize")
     lines = TextLines(spacer=_SPACER)
     with lines.indent(f"def {funcname}(dikt):"):
         lines.append(f'"""Deserialize a {cls.__name__} instance from a dictionary."""')
@@ -172,7 +168,7 @@ def make_from_dict(
     cls: type[TDataclass],
     *,
     inherited_config: ResolvedConfig,
-    _ns: dict[str, tp.Any] | None = None,
+    _ns: TNamespace | None = None,
 ) -> CycleOr[tp.Callable[[tp.Mapping[str, tp.Any]], TDataclass]]:
     """Make a from_dict deserialization method for the given dataclass.
 
@@ -194,7 +190,7 @@ def _handle_extra_fields(
     fields: tp.Iterable[dcs.Field],
     strategy: EFS,
     *,
-    ns: dict[str, tp.Any],
+    ns: TNamespace,
     dict_name: str = "dikt",
     instance_name: str = "inst",
     attribute_name: str = "_extra_fields",
@@ -216,7 +212,7 @@ def _handle_extra_fields(
 
     condition_check = (
         f"if len({dict_name}) > {n_expected_fields} "
-        "or not {field_names_set_varname}.issuperset({dict_name}):"
+        f"or not {field_names_set_varname}.issuperset({dict_name}):"
     )
     extra_field_expr = (
         f"{{k: v for k, v in {dict_name}.items() if k not in {field_names_set_varname}}}"

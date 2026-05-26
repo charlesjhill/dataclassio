@@ -270,6 +270,9 @@ class ResolvedConfig:
         digest = str(abs(hash(key)))[:6]
         return f"_{digest!s}"
 
+    def get_func_name(self, kls: type, direction: tp.Literal["deserialize", "serialize"]):
+        return f"{direction}_{kls.__name__}{self.func_postfix()}"
+
     @property
     def legacy_cache_key(self) -> tuple[tp.Hashable, str]:
         k = self.cache_key()
@@ -312,21 +315,14 @@ class ResolvedConfig:
 
     def build_frame_config(
         self,
-        type_opts_for_target: TypeOptions | None,
+        target_type: type,
     ) -> "ResolvedConfig":
-        """Build the config for this codegen frame based on this "inherited" config.
+        """Build the config for this codegen frame based on this "inherited" config."""
+        type_opts_for_target = get_type_options(target_type)
+        if not type_opts_for_target:
+            return self
 
-        Composition rules:
-        - `inherited` carries CALL-sourced DEEP options, plus any DEEP_ONCE survivors
-          (consumed) from a parent field.
-        - type-level options for `kls` are loaded fresh; they do not propagate to nested types.
-        - Within the frame precedence:
-              DEEP_ONCE > FIELD > TYPE > CALL > DEFAULTS
-          which is enforced by ConfigEntry.precendence()
-        """
         type_entries = _yield_entries(type_opts_for_target, Scope.TYPE)
-
-        # overlay handles precedence: DEEP_ONCE survivor > TYPE > CALL
         return self._with_overlay(type_entries)
 
     def build_field_config(
@@ -337,6 +333,8 @@ class ResolvedConfig:
 
         Field-sourced entries have precedence between DEEP_ONCE survivors.
         """
+        if not field_opts:
+            return self
 
         field_entries = _yield_entries(field_opts, Scope.FIELD)
         return self._with_overlay(field_entries)

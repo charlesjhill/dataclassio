@@ -21,6 +21,14 @@ select = [
     "PT",       # pytest
 ]
 
+extend-ignore = [
+    # Conflicts with the formatter
+    "W191",
+    "E111",
+    "E114",
+    "E117",
+]
+
 unfixable = ["F401"]
 
 [lint.pyupgrade]
