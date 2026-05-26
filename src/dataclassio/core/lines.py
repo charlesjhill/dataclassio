@@ -19,9 +19,9 @@ class TextLines(tp.Sequence[str]):
     def append(self, line: str, /):
         self._lines.append(f"{self._spacer * self._indent_level}{line}")
 
-    def extend(self, lines: tp.Iterable[str] | "TextLines", /):
+    def extend(self, lines: "tp.Iterable[str] | TextLines", /):
         iterable = lines._lines if isinstance(lines, TextLines) else lines
-        self._lines.extend((f"{self._spacer * self._indent_level}{line}" for line in iterable))
+        self._lines.extend(f"{self._spacer * self._indent_level}{line}" for line in iterable)
 
     @contextlib.contextmanager
     def indent(self, initial: str | None = None, /):

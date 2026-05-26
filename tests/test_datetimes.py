@@ -1,5 +1,5 @@
 import dataclasses as dcs
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -42,7 +42,7 @@ class TestDatetimeParsing:
 
     def test_iso_serialization(self):
         """Test to_dict converts datetime to ISO format strings."""
-        ts = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
         obj = TimestampModel(event_name="login", ts=ts)
 
         result = obj.to_dict()
@@ -74,5 +74,5 @@ class TestDatetimeParsing:
     def test_invalid_iso_format_raises(self):
         """Verify that malformed strings raise ValueErrors, maintaining integrity."""
         data = {"event_name": "fail", "ts": "not-a-date"}
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError):  # noqa: PT011
             TimestampModel.from_dict(data)

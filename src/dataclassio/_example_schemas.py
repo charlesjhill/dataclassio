@@ -10,12 +10,12 @@ from dataclassio.io_mixin import IOMixin
 
 @dataclass
 class CocoInfo(IOMixin):
-    year: tp.Optional[int] = None
-    version: tp.Optional[str] = None
-    description: tp.Optional[str] = None
-    contributor: tp.Optional[str] = None
-    url: tp.Optional[str] = None
-    date_created: tp.Optional[str] = None
+    year: int | None = None
+    version: str | None = None
+    description: str | None = None
+    contributor: str | None = None
+    url: str | None = None
+    date_created: str | None = None
 
     @classmethod
     def manual_from_dict(cls, dikt):
@@ -33,8 +33,7 @@ class CocoInfo(IOMixin):
             kw["url"] = dikt["url"]
         if "date_created" in dikt:
             kw["date_created"] = dikt["date_created"]
-        inst = cls(**kw)
-        return inst
+        return cls(**kw)
 
     def manual_to_dict(self, skip_defaults=False):
         """Serialize a CocoInfo instance into a dictionary."""
@@ -70,12 +69,12 @@ class CocoInfo(IOMixin):
 class CocoImage(IOMixin):
     id: int
     file_name: str
-    width: tp.Optional[int] = None
-    height: tp.Optional[int] = None
-    license: tp.Optional[int] = None
-    flickr_url: tp.Optional[str] = None
-    coco_url: tp.Optional[str] = None
-    date_captured: tp.Optional[str] = None
+    width: int | None = None
+    height: int | None = None
+    license: int | None = None
+    flickr_url: str | None = None
+    coco_url: str | None = None
+    date_captured: str | None = None
 
     @classmethod
     def manual_from_dict(cls, dikt):
@@ -105,8 +104,7 @@ class CocoImage(IOMixin):
             kw["coco_url"] = dikt["coco_url"]
         if "date_captured" in dikt:
             kw["date_captured"] = dikt["date_captured"]
-        inst = cls(**kw)
-        return inst
+        return cls(**kw)
 
     @classmethod
     def fast_from_dict(cls, dikt):
@@ -125,35 +123,12 @@ class CocoImage(IOMixin):
                 f"'file_name' is a required attribute for CocoImage, but was missing from {dikt=}."
             ) from exc
 
-        if "width" in dikt:
-            v_width = dikt["width"]
-        else:
-            v_width = None
-
-        if "height" in dikt:
-            v_height = dikt["height"]
-        else:
-            v_height = None
-
-        if "license" in dikt:
-            v_license = dikt["license"]
-        else:
-            v_license = None
-
-        if "flickr_url" in dikt:
-            v_flickr_url = dikt["flickr_url"]
-        else:
-            v_flickr_url = None
-
-        if "coco_url" in dikt:
-            v_coco_url = dikt["coco_url"]
-        else:
-            v_coco_url = None
-
-        if "date_captured" in dikt:
-            v_date = dikt["date_captured"]
-        else:
-            v_date = None
+        v_width = dikt.get("width", None)
+        v_height = dikt.get("height", None)
+        v_license = dikt.get("license", None)
+        v_flickr_url = dikt.get("flickr_url", None)
+        v_coco_url = dikt.get("coco_url", None)
+        v_date = dikt.get("date_captured", None)
 
         return cls(
             v_id, v_file_name, v_width, v_height, v_license, v_flickr_url, v_coco_url, v_date
@@ -198,7 +173,7 @@ class CocoImage(IOMixin):
 class CocoLicense(IOMixin):
     id: int
     name: str
-    url: tp.Optional[str] = None
+    url: str | None = None
 
     @classmethod
     def manual_from_dict(cls, dikt):
@@ -218,8 +193,7 @@ class CocoLicense(IOMixin):
             ) from exc
         if "url" in dikt:
             kw["url"] = dikt["url"]
-        inst = cls(**kw)
-        return inst
+        return cls(**kw)
 
     def manual_to_dict(self, skip_defaults=False):
         """Serialize a CocoLicense instance into a dictionary."""
@@ -245,7 +219,7 @@ class CocoLicense(IOMixin):
 class CocoCategory(IOMixin):
     id: int
     name: str
-    supercategory: tp.Optional[str] = None
+    supercategory: str | None = None
 
     @classmethod
     def manual_from_dict(cls, dikt):
@@ -265,8 +239,7 @@ class CocoCategory(IOMixin):
             ) from exc
         if "supercategory" in dikt:
             kw["supercategory"] = dikt["supercategory"]
-        inst = cls(**kw)
-        return inst
+        return cls(**kw)
 
     def manual_to_dict(self, skip_defaults=False):
         """Serialize a CocoCategory instance into a dictionary."""
@@ -294,9 +267,9 @@ class CocoAnnotation(IOMixin):
     image_id: int
     category_id: int
     bbox: list[int | float]
-    area: tp.Optional[float] = None
+    area: float | None = None
     iscrowd: int = 0
-    segmentation: tp.Optional[tp.Any] = None
+    segmentation: tp.Any | None = None
 
     @classmethod
     def manual_from_dict(cls, dikt):
@@ -314,14 +287,16 @@ class CocoAnnotation(IOMixin):
             kw["image_id"] = dikt["image_id"]
         except KeyError as exc:
             raise KeyError(
-                f"'image_id' is a required attribute for CocoAnnotation, but was missing from {dikt=}."
+                "'image_id' is a required attribute for CocoAnnotation, but was "
+                f"missing from {dikt=}."
             ) from exc
 
         try:
             kw["category_id"] = dikt["category_id"]
         except KeyError as exc:
             raise KeyError(
-                f"'category_id' is a required attribute for CocoAnnotation, but was missing from {dikt=}."
+                "'category_id' is a required attribute for CocoAnnotation, but "
+                f"was missing from {dikt=}."
             ) from exc
 
         try:
@@ -337,8 +312,7 @@ class CocoAnnotation(IOMixin):
             kw["iscrowd"] = dikt["iscrowd"]
         if "segmentation" in dikt:
             kw["segmentation"] = dikt["segmentation"]
-        inst = cls(**kw)
-        return inst
+        return cls(**kw)
 
     @classmethod
     def fast_from_dict(cls, dikt):
@@ -354,14 +328,16 @@ class CocoAnnotation(IOMixin):
             v_image_id = dikt["image_id"]
         except KeyError as exc:
             raise KeyError(
-                f"'image_id' is a required attribute for CocoAnnotation, but was missing from {dikt=}."
+                "'image_id' is a required attribute for CocoAnnotation, but was "
+                f" missing from {dikt=}."
             ) from exc
 
         try:
             v_category_id = dikt["category_id"]
         except KeyError as exc:
             raise KeyError(
-                f"'category_id' is a required attribute for CocoAnnotation, but was missing from {dikt=}."
+                "'category_id' is a required attribute for CocoAnnotation, but was "
+                f" missing from {dikt=}."
             ) from exc
 
         try:
@@ -371,20 +347,10 @@ class CocoAnnotation(IOMixin):
                 f"'bbox' is a required attribute for CocoAnnotation, but was missing from {dikt=}."
             ) from exc
 
-        if "area" in dikt:
-            v_area = dikt["area"]
-        else:
-            v_area = None
+        v_area = dikt.get("area", None)
+        v_iscrowd = dikt.get("iscrowd", 0)
+        v_segmentation = dikt.get("segmentation", None)
 
-        if "iscrowd" in dikt:
-            v_iscrowd = dikt["iscrowd"]
-        else:
-            v_iscrowd = 0
-
-        if "segmentation" in dikt:
-            v_segmentation = dikt["segmentation"]
-        else:
-            v_segmentation = None
         return cls(v_id, v_image_id, v_category_id, v_bbox, v_area, v_iscrowd, v_segmentation)
 
     def manual_to_dict(self, skip_defaults=False):
@@ -426,7 +392,10 @@ class Coco(IOMixin):
     licenses: list[CocoLicense] = field(default_factory=list)
 
     def __repr__(self) -> str:
-        return f"<Coco images={len(self.images)} annotations={len(self.annotations)} categories={len(self.categories)}>"
+        n_images = len(self.images)
+        n_anns = len(self.annotations)
+        n_cats = len(self.categories)
+        return f"<Coco images={n_images} annotations={n_anns} categories={n_cats}>"
 
     @classmethod
     def manual_from_dict(cls, dikt):
@@ -442,8 +411,7 @@ class Coco(IOMixin):
             kw["categories"] = [CocoCategory.manual_from_dict(d) for d in dikt["categories"]]
         if "licenses" in dikt:
             kw["licenses"] = [CocoLicense.manual_from_dict(d) for d in dikt["licenses"]]
-        inst = cls(**kw)
-        return inst
+        return cls(**kw)
 
     @classmethod
     def fast_from_dict(
@@ -456,30 +424,11 @@ class Coco(IOMixin):
         _ccategory=CocoCategory.from_dict,
         _clic=CocoLicense.from_dict,
     ):
-        if "info" in dikt:
-            c_info = _cinfo(dikt["info"])
-        else:
-            c_info = _cinfo_cls()
-
-        if "images" in dikt:
-            c_images = [_cimage(d) for d in dikt["images"]]
-        else:
-            c_images = []
-
-        if "annotations" in dikt:
-            c_annotations = [_cannot(d) for d in dikt["annotations"]]
-        else:
-            c_annotations = []
-
-        if "categories" in dikt:
-            c_categories = [_ccategory(d) for d in dikt["categories"]]
-        else:
-            c_categories = []
-
-        if "licenses" in dikt:
-            c_licences = [_clic(d) for d in dikt["licenses"]]
-        else:
-            c_licences = []
+        c_info = _cinfo(dikt["info"]) if "info" in dikt else _cinfo_cls()
+        c_images = [_cimage(d) for d in dikt["images"]] if "images" in dikt else []
+        c_annotations = [_cannot(d) for d in dikt["annotations"]] if "annotations" in dikt else []
+        c_categories = [_ccategory(d) for d in dikt["categories"]] if "categories" in dikt else []
+        c_licences = [_clic(d) for d in dikt["licenses"]] if "licenses" in dikt else []
 
         return cls(c_info, c_images, c_annotations, c_categories, c_licences)
 
@@ -516,7 +465,7 @@ class Coco(IOMixin):
 @dataclass
 class Address(IOMixin):
     city: str
-    zip_code: tp.Optional[str] = None
+    zip_code: str | None = None
 
 
 @dataclass
@@ -524,7 +473,7 @@ class User(IOMixin):
     id: int
     name: str
     is_admin: bool = False
-    address: tp.Optional[Address] = None
+    address: Address | None = None
     named_addresses: dict[str, Address] = field(default_factory=dict)
 
 

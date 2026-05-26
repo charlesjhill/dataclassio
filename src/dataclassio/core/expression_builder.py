@@ -5,16 +5,18 @@ from datetime import datetime
 
 import typing_extensions as tp
 
-from ..config import _TotalDioOptions
-from ..sentinels import CYCLE_DETECTED, CYCLE_DETECTED_T, NO_VALUE, NO_VALUE_T
-from ..types import FUNC_MAKER, DataclassInstance
-from .common import get_fields, set_variable_in_ns, strip_optional
+from dataclassio.config2 import DioOptions
+from dataclassio.sentinels import CYCLE_DETECTED, NO_VALUE, CycleOr, NoValueOr
+from dataclassio.types import DataclassInstance, FunctionMaker
+
+from .field_methods import get_fields
+from .variables import set_variable_in_ns
 
 __all__ = ("SerializerData", "build_expr", "get_field_expression")
 
 
 class ParserOutput(tp.NamedTuple):
-    parser: tp.Callable | CYCLE_DETECTED_T
+    parser: CycleOr[tp.Callable]
     fname: str
 
     @property
@@ -27,9 +29,9 @@ class SerializerData(tp.NamedTuple):
 
     registry: tp.MutableMapping
     namespace: tp.MutableMapping
-    maker_func: FUNC_MAKER
+    maker_func: FunctionMaker
     cache_key: tuple[tp.Hashable, str]
-    options: _TotalDioOptions
+    options: DioOptions
     func_prefix: tp.Literal["deserialize", "serialize"]
 
     def get_parser_and_fname_for_cls(
@@ -48,7 +50,7 @@ class SerializerData(tp.NamedTuple):
 
         return ParserOutput(parser, fname)
 
-    def new_variable(self, name: str, value: tp.Any | NO_VALUE_T = NO_VALUE):
+    def new_variable(self, name: str, value: NoValueOr[tp.Any] = NO_VALUE):
         """Generate a new variable name which does not conflict with any in the namespace.
 
         Args:
@@ -111,7 +113,7 @@ def build_expr(
         return f"[{inner_expr} for x in {expr_str}]"
 
     if origin in (dict, tp.Mapping):
-        k_type, v_type = args if args else (tp.Any, tp.Any)
+        k_type, v_type = args or (tp.Any, tp.Any)
         k_expr = build_expr(k_type, "k", serializer_data=serializer_data)
         v_expr = build_expr(v_type, "v", serializer_data=serializer_data)
         if k_expr == "k" and v_expr == "v":
@@ -135,6 +137,7 @@ def build_expr(
                 f"type={t}, generated via {expr_str=} is not supported."
                 " A discriminator field was not provided."
             )
+            raise RuntimeError(msg)
         # assert isinstance(discriminator, str)
 
         if serializer_data.func_prefix == "deserialize":
@@ -151,7 +154,8 @@ def build_expr(
             if not fields:
                 msg = (
                     f"type={t}, generated via {expr_str=} is not supported."
-                    f"Union option {cls_option} does not have a field with the name {discriminator}."
+                    f"Union option {cls_option} does not have a field with the"
+                    f" name {discriminator}."
                 )
                 raise RuntimeError(msg)
             # get the type.
@@ -163,7 +167,8 @@ def build_expr(
             ):
                 msg = (
                     f"type={t}, generated via {expr_str=} is not supported."
-                    f"Union option {cls_option} has a field with name {discriminator}, but it is not a Literal with string arguments."
+                    f"Union option {cls_option} has a field with name {discriminator}, but it is"
+                    " not a Literal with string arguments."
                 )
                 raise RuntimeError(msg)
 
@@ -194,6 +199,7 @@ def build_expr(
 
     # 2. Handle atoms (note that we don't recurse into `build_expr`)
     if dcs.is_dataclass(t):
+        assert isinstance(t, type)
         _, fname = serializer_data.get_parser_and_fname_for_cls(t, update_ns=True)
         return f"{fname}({expr_str})"
 
@@ -240,4 +246,31 @@ def get_field_expression(f: dcs.Field, serializer_data: SerializerData) -> str:
         msg = f"Unsupported {serializer_data.func_prefix=}. Expected 'deserialize' or 'serialize'."
         raise ValueError(msg)
 
-    return build_expr(f.type, access_expr, serializer_data=serializer_data)
+    ft = f.type
+    assert not isinstance(ft, str)
+
+    return build_expr(ft, access_expr, serializer_data=serializer_data)
+
+
+def strip_optional(t: tp.TypeForm) -> tuple[tp.Any, bool]:
+    """Check if a type annotation is an optional and if so, remove it.
+
+    Returns:
+        (type, bool): Corresponds to (non-None arguments of the type, flag if the type was
+            an Optional)
+    """
+    origin, args = tp.get_origin(t), tp.get_args(t)
+    if not (origin is tp.Union or origin is types.UnionType):
+        return t, False
+
+    non_none_args = [x for x in args if x is not types.NoneType]
+
+    if len(non_none_args) == len(args):
+        return t, False
+
+    if len(non_none_args) == 1:
+        # Must have been [None, X]
+        return non_none_args[0], True
+
+    # len(non_none_args) > 1
+    return tp.Union[non_none_args], True  # noqa: UP007

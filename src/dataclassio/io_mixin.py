@@ -2,12 +2,13 @@ import contextlib
 import io
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import typing_extensions as tp
 
 from . import functional as diof
-from .config import DioOptions
-from .functional.from_dict import _EXTRA_FIELD_ATTR_NAME
+from .config2 import CallOptions
+from .core.from_dict import _EXTRA_FIELD_ATTR_NAME
 from .types import PathOrHandle
 
 
@@ -17,7 +18,7 @@ def _fname_or_fpointer(handle: PathOrHandle, mode="r", **kw):
         yield handle
         return
 
-    with open(handle, mode=mode, **kw) as f:
+    with Path(handle).open(mode=mode, **kw) as f:
         yield f
 
 
@@ -41,8 +42,8 @@ class IOMixin:
         fname_or_handle: PathOrHandle,
         *,
         load_kw: tp.Mapping[str, tp.Any] | None = None,
-        options: DioOptions | None = None,
-        **kw: tp.Unpack[DioOptions],
+        options: CallOptions | None = None,
+        **kw: tp.Unpack[CallOptions],
     ):
         """Initialize this class from a JSON file.
 
@@ -63,8 +64,8 @@ class IOMixin:
         cls: type[tp.Self],
         dikt: tp.Mapping[str, tp.Any],
         *,
-        options: DioOptions | None = None,
-        **kw: tp.Unpack[DioOptions],
+        options: CallOptions | None = None,
+        **kw: tp.Unpack[CallOptions],
     ) -> tp.Self:
         """Initialize this class from a dictionary."""
         return diof.from_dict(cls, dikt, options=options, **kw)
@@ -72,8 +73,8 @@ class IOMixin:
     def to_dict(
         self,
         *,
-        options: DioOptions | None = None,
-        **kw: tp.Unpack[DioOptions],
+        options: CallOptions | None = None,
+        **kw: tp.Unpack[CallOptions],
     ) -> dict[str, tp.Any]:
         """Serialize this class to a dictionary.
 
@@ -87,8 +88,8 @@ class IOMixin:
         fname_or_handle: PathOrHandle,
         *,
         dump_kw: tp.Mapping[str, tp.Any] | None = None,
-        options: DioOptions | None = None,
-        **kw: tp.Unpack[DioOptions],
+        options: CallOptions | None = None,
+        **kw: tp.Unpack[CallOptions],
     ):
         """Serialize this instance to a JSON file.
 
