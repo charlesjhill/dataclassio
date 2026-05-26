@@ -3,9 +3,9 @@
 import typing_extensions as tp
 
 from .config2 import CallOptions, ResolvedConfig
+from .constants import CYCLE_DETECTED
 from .core import from_dict as load_core
 from .core import to_dict as dump_core
-from .sentinels import CYCLE_DETECTED
 from .types import DataclassInstance, TDataclass
 
 __all__ = (

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import typing_extensions as tp
 
-from dataclassio.sentinels import CycleOr
+from dataclassio.constants import CycleOr
 
 if tp.TYPE_CHECKING:
     from dataclassio.config2 import ResolvedConfig

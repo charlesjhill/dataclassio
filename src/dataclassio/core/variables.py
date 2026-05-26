@@ -2,7 +2,7 @@ import uuid
 
 import typing_extensions as tp
 
-from dataclassio.sentinels import NO_VALUE, NoValueOr
+from dataclassio.constants import NO_VALUE, NoValueOr
 from dataclassio.types import TNamespace
 
 __all__ = (

@@ -3,7 +3,7 @@ import linecache
 import typing_extensions as tp
 
 from dataclassio.config2 import ResolvedConfig
-from dataclassio.sentinels import CYCLE_DETECTED, IN_PROGRESS, CycleOr
+from dataclassio.constants import CYCLE_DETECTED, IN_PROGRESS, CycleOr
 from dataclassio.types import DataclassInstance, SourceCodeMaker, TNamespace
 
 from .field_methods import get_fields
@@ -85,3 +85,28 @@ def validate_type_hints(kls: type[DataclassInstance]):
         resolved_annotations = tp.get_annotations(kls, eval_str=True, format=tp.Format.VALUE)
         for f in forward_ref_fields:
             f.type = resolved_annotations[f.name]
+
+
+def is_overridden(child_cls: type, base_cls: type, name: str) -> bool:
+    child_attr = getattr(child_cls, name, None)
+    base_attr = getattr(base_cls, name, None)
+
+    if child_attr is None or base_attr is None:
+        return False
+
+    # 2. Extract the underlying function for classmethods/staticmethods
+    # Bound methods (like classmethods) have a __func__ attribute.
+    # Regular methods in Python 3 are just functions when accessed via the class.
+    child_func = getattr(child_attr, "__func__", child_attr)
+    base_func = getattr(base_attr, "__func__", base_attr)
+
+    return child_func is not base_func
+
+
+def overrides_hook(child_cls: type, name: str) -> bool:
+    from dataclassio import IOMixin
+
+    if issubclass(child_cls, IOMixin):
+        return is_overridden(child_cls, IOMixin, name)
+
+    return callable(getattr(child_cls, name, None))

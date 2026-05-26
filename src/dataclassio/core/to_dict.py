@@ -3,17 +3,22 @@ from functools import partial
 import typing_extensions as tp
 
 from dataclassio.config2 import ResolvedConfig
-from dataclassio.sentinels import NO_VALUE, CycleOr
+from dataclassio.constants import (
+    _EXTRA_FIELD_ATTR_NAME,
+    _POST_TO_DICT_HOOK,
+    _PRE_TO_DICT_HOOK,
+    _SPACER,
+    NO_VALUE,
+    CycleOr,
+)
 from dataclassio.types import DataclassInstance, TDataclass, TNamespace
 
-from ._shared_codegen import maker_core
+from ._shared_codegen import maker_core, overrides_hook
 from .expression_builder import SerializerData, get_field_expression
 from .field_methods import field_has_default, get_fields, parse_default_expression
-from .from_dict import _EXTRA_FIELD_ATTR_NAME
 from .lines import TextLines
 
 _KNOWN_SERIALIZERS: dict[tuple[type, tp.Hashable], tp.Callable[[DataclassInstance], dict]] = {}
-_SPACER = "  "
 
 
 def make_to_dict_source_code(
@@ -111,20 +116,26 @@ def make_to_dict_source_code(
 
     lines = TextLines(spacer=_SPACER)
     funcname = frame_config.get_func_name(cls, "serialize")
+
+    if frame_config["skip_hooks"]:
+        insert_pre = False
+        insert_post = False
+    else:
+        insert_pre = overrides_hook(cls, _PRE_TO_DICT_HOOK)
+        insert_post = overrides_hook(cls, _POST_TO_DICT_HOOK)
+
     with lines.indent(f"def {funcname}(inst):"):
         lines.append(f'"""Serialize a {cls.__name__} instance into a dictionary."""')
+        if insert_pre:
+            lines.append(f"inst.{_PRE_TO_DICT_HOOK}()")
 
-        if default_check_lines:
-            with lines.indent("dikt = {"):
-                lines.extend(literal_lines)
-            lines.append("}")
-            lines.extend(default_check_lines)
-            lines.append("return dikt")
-        else:
-            # all inline.
-            with lines.indent("return {"):
-                lines.extend(literal_lines)
-            lines.append("}")
+        with lines.indent("dikt = {"):
+            lines.extend(literal_lines)
+        lines.append("}")
+        lines.extend(default_check_lines)
+        if insert_post:
+            lines.append(f"dikt = inst.{_POST_TO_DICT_HOOK}(dikt)")
+        lines.append("return dikt")
     return lines
 
 

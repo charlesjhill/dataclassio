@@ -5,10 +5,16 @@ from functools import partial
 import typing_extensions as tp
 
 from dataclassio.config2 import ResolvedConfig
-from dataclassio.sentinels import CycleOr
+from dataclassio.constants import (
+    _EXTRA_FIELD_ATTR_NAME,
+    _POST_FROM_DICT_HOOK,
+    _PRE_FROM_DICT_HOOK,
+    _SPACER,
+    CycleOr,
+)
 from dataclassio.types import EFS, DataclassInstance, TDataclass, TNamespace
 
-from ._shared_codegen import maker_core
+from ._shared_codegen import maker_core, overrides_hook
 from .expression_builder import SerializerData, get_field_expression
 from .field_methods import field_has_default, get_fields, parse_default_expression
 from .lines import TextLines
@@ -20,8 +26,6 @@ __all__ = (
 )
 
 _KNOWN_DESERIALIZERS: dict[tuple[type, tp.Any], tp.Callable[[tp.Mapping], tp.Any]] = {}
-_EXTRA_FIELD_ATTR_NAME = "_extra_fields"
-_SPACER = "  "
 
 
 class FieldSpec(tp.NamedTuple):
@@ -46,6 +50,7 @@ def make_from_dict_source_code(
     _ns: TNamespace | None = None,
 ) -> TextLines:
     """Generate the source code and necessary namespace for a from_dict deserialization method."""
+
     if _ns is None:
         _ns = {}
 
@@ -97,8 +102,11 @@ def make_from_dict_source_code(
     # Assemble the final function body
     # Start with the try/except block for required keys.
     body = TextLines(spacer=_SPACER)
-    req_fields = [v for v in field_data.values() if not v.has_default]
 
+    if overrides_hook(cls, _PRE_FROM_DICT_HOOK) and not frame_config["skip_hooks"]:
+        body.append(f"dikt = {cls_factory_name}.{_PRE_FROM_DICT_HOOK}(dikt)")
+
+    req_fields = [v for v in field_data.values() if not v.has_default]
     if req_fields:
         with body.indent("try:"):
             for fs in req_fields:
@@ -145,14 +153,15 @@ def make_from_dict_source_code(
         attribute_name=_EXTRA_FIELD_ATTR_NAME,
     )
 
-    if extras:
-        # We have extras, so save the inst
-        body.append(f"inst = {cls_factory_name}({data_str})")
-        # N.B. For EFS.STRICT, this _could_ go at the top of the function body to bail early
-        body.extend(extras)
-        body.append("return inst")
-    else:
-        body.append(f"return {cls_factory_name}({data_str})")
+    # We have extras, so save the inst
+    body.append(f"inst = {cls_factory_name}({data_str})")
+    # N.B. For EFS.STRICT, this _could_ go at the top of the function body to bail early
+    body.extend(extras)
+
+    if overrides_hook(cls, _POST_FROM_DICT_HOOK) and not frame_config["skip_hooks"]:
+        body.append(f"inst.{_POST_FROM_DICT_HOOK}(dikt)")
+
+    body.append("return inst")
 
     # Pack it all up!
     funcname = frame_config.get_func_name(cls, "deserialize")

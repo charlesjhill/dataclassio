@@ -6,7 +6,7 @@ from datetime import datetime
 import typing_extensions as tp
 
 from dataclassio.config2 import DioOptions
-from dataclassio.sentinels import CYCLE_DETECTED, NO_VALUE, CycleOr, NoValueOr
+from dataclassio.constants import CYCLE_DETECTED, NO_VALUE, CycleOr, NoValueOr
 from dataclassio.types import DataclassInstance, FunctionMaker
 
 from .field_methods import get_fields

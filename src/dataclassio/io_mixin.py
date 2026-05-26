@@ -8,7 +8,7 @@ import typing_extensions as tp
 
 from . import functional as diof
 from .config2 import CallOptions
-from .core.from_dict import _EXTRA_FIELD_ATTR_NAME
+from .constants import _EXTRA_FIELD_ATTR_NAME
 from .types import PathOrHandle
 
 
@@ -35,6 +35,8 @@ class IOMixin:
         if hasattr(self, _EXTRA_FIELD_ATTR_NAME):
             return dict(getattr(self, _EXTRA_FIELD_ATTR_NAME))
         return {}
+
+    # IO methods
 
     @classmethod
     def from_json_file(
@@ -103,3 +105,17 @@ class IOMixin:
         dump_kw = dump_kw or {}
         with _fname_or_fpointer(fname_or_handle, mode="w", encoding="utf-8") as fp:
             json.dump(obj, fp, **dump_kw)
+
+    # Hooks
+    def __pre_to_dict__(self) -> None:
+        return
+
+    def __post_to_dict__(self, dikt: dict) -> dict:
+        return dikt
+
+    @classmethod
+    def __pre_from_dict__(cls, dikt: dict) -> dict:
+        return dikt
+
+    def __post_from_dict__(self, dikt: dict) -> None:
+        return
