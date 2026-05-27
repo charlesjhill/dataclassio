@@ -44,6 +44,11 @@ def make_to_dict_source_code(
         # Form the expression itself that gets the value.
         field_opts = f.metadata.get("dio")
         field_config = frame_config.build_field_config(field_opts)
+        field_config_dict = field_config.as_dict()
+
+        if not field_config_dict["dump"]:
+            continue
+
         child_inherited = field_config.project_for_child()
         cache_key = child_inherited.legacy_cache_key
 
@@ -54,7 +59,7 @@ def make_to_dict_source_code(
                 namespace=_ns,
                 maker_func=partial(make_to_dict, inherited_config=child_inherited, _ns=_ns),
                 cache_key=cache_key,
-                options=field_config.as_dict(),
+                options=field_config_dict,
                 func_prefix="serialize",
             ),
         )
@@ -69,7 +74,7 @@ def make_to_dict_source_code(
         #  field(skip_defaults=...) is meant for the next frame, not this one.
 
         skip_this_field: bool = False
-        if (s := field_config["skip_if_default"]) is not NO_VALUE or (
+        if (s := field_config_dict["skip_if_default"]) is not NO_VALUE or (
             s := frame_config["skip_defaults"]
         ) is not NO_VALUE:
             skip_this_field = s
@@ -87,32 +92,33 @@ def make_to_dict_source_code(
             # Either this field has no default, or we are keeping all values. This easy.
             literal_lines.append(f"{f.name!r}: {field_expr},")
 
-    # Handle the extra fields. If there are no "default checking" lines, we can pack this into
-    #  the bottom of the literals. If we do check some fields for their default value,
-    #  we include the extra field population right before export to try keeping the "real"
-    #  fields in order in the resulting dictionary.
-    if issubclass(cls, IOMixin):
-        # Subclasses of IOMixin _always_ define an _EXTRA_FIELD_ATTR_NAME,
-        #  so we don't need to use the get attr with a string literal.
-        extras_expr = f"inst.{_EXTRA_FIELD_ATTR_NAME!s}"
-        has_extras_attr = True
-    else:
-        # Otherwise, the object may not define the attribute, so use
-        extras_expr = f"getattr(inst, {_EXTRA_FIELD_ATTR_NAME!r}, {{}})"
-        has_extras_attr = False
+    if frame_config["dump_extras"]:
+        # Handle the extra fields. If there are no "default checking" lines, we can pack this into
+        #  the bottom of the literals. If we do check some fields for their default value,
+        #  we include the extra field population right before export to try keeping the "real"
+        #  fields in order in the resulting dictionary.
+        if issubclass(cls, IOMixin):
+            # Subclasses of IOMixin _always_ define an _EXTRA_FIELD_ATTR_NAME,
+            #  so we don't need to use the get attr with a string literal.
+            extras_expr = f"inst.{_EXTRA_FIELD_ATTR_NAME!s}"
+            has_extras_attr = True
+        else:
+            # Otherwise, the object may not define the attribute, so use
+            extras_expr = f"getattr(inst, {_EXTRA_FIELD_ATTR_NAME!r}, {{}})"
+            has_extras_attr = False
 
-    if not default_check_lines:
-        # If there are no default value checks, we can bake this directly into the dict literal
-        literal_lines.append(f"**{extras_expr},")
-    elif has_extras_attr:
-        # Need to call `dikt.update`. We have an extras_attr.
-        default_check_lines.append(f"dikt.update({extras_expr})")
-    else:
-        # Need to call `dikt.update`. We may or may not have an extras_attr.
-        #  It is faster to use getattr(..., None)
-        default_check_lines.append(f"_extras = {extras_expr.format('None')}")
-        with default_check_lines.indent("if _extras is not None:"):
-            default_check_lines.append("dikt.update(_extras)")
+        if not default_check_lines:
+            # If there are no default value checks, we can bake this directly into the dict literal
+            literal_lines.append(f"**{extras_expr},")
+        elif has_extras_attr:
+            # Need to call `dikt.update`. We have an extras_attr.
+            default_check_lines.append(f"dikt.update({extras_expr})")
+        else:
+            # Need to call `dikt.update`. We may or may not have an extras_attr.
+            #  It is faster to use getattr(..., None)
+            default_check_lines.append(f"_extras = {extras_expr.format('None')}")
+            with default_check_lines.indent("if _extras is not None:"):
+                default_check_lines.append("dikt.update(_extras)")
 
     lines = TextLines(spacer=_SPACER)
     funcname = frame_config.get_func_name(cls, "serialize")
