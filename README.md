@@ -1,8 +1,8 @@
 # DataclassIO
 
-`DataclassIO` is a *fast* package for rountrip conversion between python literals and dataclass hierarchies.
+`DataclassIO` is a package for *fast*  roundtrip conversion between python literals and dataclass hierarchies.
 
-This project is in its early stages, but it is has minimum viable functionality for my use-cases.
+This project is in its early stages. If you need maturity and _lots_ of bells of whistles, consider another library :)
 
 ## Supported Types and Constructs
 
@@ -24,9 +24,11 @@ The library also supports common dataclass features:
 
 - Default values and default factories: `field(default=..., default_factory=...)`
 - Init-only and `init=False` fields
-  - Note that `init=False` fields are still exported as usual.
+  - Note that `init=False` fields are still exported.
 - `kw_only` fields and dataclasses.
 - Class variables.
+
+The library also supports a handful of hooks that can be used to customize the serialization or deserialization process, or run other side effects during `to_dict` and `from_dict` calls.
 
 ## Example
 
@@ -36,7 +38,7 @@ from dataclasses import dataclass, field
 from dataclassio import IOMixin, EFS
 
 @dataclass
-class Address(IOMixin):
+class Address:
     city: str
     zip_code: tp.Optional[str] = None
 
@@ -46,7 +48,7 @@ class User(IOMixin):
     id: int
     name: str
     is_admin: bool = False
-    address: tp.Optional[Address] = None  # <-- Address need not derive from IOMixin!
+    address: tp.Optional[Address] = None  # <-- Address does not derive from IOMixin!
     named_addresses: dict[str, Address] = field(default_factory=dict)
 
 ## Dictionary -> Dataclass
@@ -62,7 +64,7 @@ assert isinstance(actual.named_addresses["home"], Address)
 assert actual.named_addresses["work"].city == "Coolsville"
 
 ## Dataclass -> Dictionary (note that the default-valued-fields are excluded)
-dikt = actual.to_dict(skip_if_default=True)
+dikt = actual.to_dict(skip_defaults=True)
 assert dikt == data
 
 ## Extra Fields are captured:
@@ -77,12 +79,15 @@ assert address_obj.to_dict() == address_data  # extra fields survive round trip.
 
 ## Configuration
 
-A handful of configuration options are supported to customize serialization and deserialization. These can be provided either at time of a `to_dict` or `from_dict` call ("call-level config") or can be applied to individual dataclass fields statically ("field-level config"). The following options are supported:
+A handful of configuration options are supported to customize serialization and deserialization. These can be provided either at time of a `to_dict` or `from_dict` call ("call-level config") or can be applied to individual dataclass fields statically ("field-level config"). Not all options can be provided in both places. The following options are supported:
 
 * `discriminator`: The name of a field to use when discrimating between unions of dataclass types.
-* `skip_if_default`: A flag to omit fields during the `to_dict` call if they have the default value.
+* `skip_if_default`/`skip_defaults`: Flags to omit fields during the `to_dict` call if they have the default value. `skip_if_default` is field-level only, and has the highest precedence. `skip_defaults` can be applied at the call- and field-level. At the field-level, `skip_defaults` has a slightly different meaning from `skip_if_default`:
+    * `x: T = field(..., FieldOptions(skip_if_default=True))`: Suppress serialization of the field `x` if its value equals the default.
+    * `x: T = field(..., FieldOptions(skip_defaults=True))`: Suppress serialization of `T`'s fields if they have a default value.
 * `extra_field_strategy`: The preferred method for handling unexpected fields during deserialization (`from_dict`). By default they are ignored. Alternatively, an exception can be raised (`STRICT`-mode) or they can be captured into a private attribute of the object (`CAPTURE`-mode). In `CAPTURE`-mode, the unexpected fields are yielded in the `to_dict` call, supporting full round-tripping.
 * `include_src_in_docstring`: A flag to include `to_dict` and `from_dict` method source code in their corresponding docstrings. This is useful since their source code is dynamically generated.
+* `skip_hooks`: A flag to skip `to_dict` and `from_dict` hooks, even if they are defined on a type.
 
 ### Propagation and Precedence
 
@@ -90,7 +95,7 @@ When a configuration option is specified at both the call- and field-level, the 
 
 In addition to precedence differences, options propagate differently depending on where they are defined. Call-level config options always propagate through fields which are themselves dataclass-typed. Field-level config options do not.
 
-Field-level options can be conceptually divided into "shallow" and "deep" categories. "Shallow" options (e.g., `discriminator`) affect the code-generation for their contained dataclass but not the nested dataclass. Meanwhile, "deep" options (e.g., `extra_field_strategy`) are the inverse - they _do not_ affect the code-generation for their contained dataclass but _do_ for the affected field. Most of the time, this distinction is natural and does not need to be top of mind.
+Field-level options can be divided into "local" and "deep once" propagation categories. "Local" options (e.g., `discriminator`) affect the code-generation for their contained dataclass but not the nested dataclass. Meanwhile, "deep once" options (e.g., `extra_field_strategy`) are the inverse - they _do not_ affect the code-generation for their contained dataclass but _do_ for the affected field. Most of the time, this distinction is the natural interpretation and does not need to be top of mind.
 
 ## Benchmarks
 

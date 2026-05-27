@@ -4,7 +4,7 @@ from enum import Enum, auto
 
 import typing_extensions as tp
 
-from .sentinels import NO_VALUE, NoValueOr
+from .constants import NO_VALUE, NoValueOr
 from .types import EFS
 
 __all__ = (
@@ -107,12 +107,26 @@ INCLUDE_SRC_IN_DOCSTRING = OptionSpec(
     to_str=lambda _: "incl_src",
 )
 
+SKIP_HOOKS = OptionSpec(
+    name="skip_hooks",
+    type_str="bool",
+    default=False,
+    scopes={
+        S.CALL: P.DEEP,
+        S.TYPE: P.LOCAL,
+        S.FIELD: P.DEEP_ONCE,
+    },
+    to_str=lambda _: "skip_hooks",
+)
+
+
 ALL_OPTIONS: tuple[OptionSpec, ...] = (
     EXTRA_FIELD_STRATEGY,
     DISCRIMINATOR,
     SKIP_IF_DEFAULT,
     SKIP_DEFAULTS,
     INCLUDE_SRC_IN_DOCSTRING,
+    SKIP_HOOKS,
 )
 
 REGISTRY: dict[str, OptionSpec] = {o.name: o for o in ALL_OPTIONS}
@@ -128,11 +142,13 @@ class CallOptions(tp.TypedDict, total=False):
     extra_field_strategy: EFS
     skip_defaults: NoValueOr[bool]
     include_src_in_docstring: bool
+    skip_hooks: bool
 
 
 class TypeOptions(tp.TypedDict, total=False):
     extra_field_strategy: EFS
     skip_defaults: NoValueOr[bool]
+    skip_hooks: bool
 
 
 class _FieldOptions(tp.TypedDict, total=False):
@@ -140,6 +156,7 @@ class _FieldOptions(tp.TypedDict, total=False):
     discriminator: NoValueOr[str]
     skip_if_default: NoValueOr[bool]
     skip_defaults: NoValueOr[bool]
+    skip_hooks: bool
 
 
 class DioOptions(tp.TypedDict, total=True):
@@ -148,6 +165,7 @@ class DioOptions(tp.TypedDict, total=True):
     skip_if_default: NoValueOr[bool]
     skip_defaults: NoValueOr[bool]
     include_src_in_docstring: bool
+    skip_hooks: bool
 
 
 def FieldOptions(**kw: tp.Unpack[_FieldOptions]):
@@ -252,6 +270,7 @@ class ResolvedConfig:
             skip_defaults=self["skip_defaults"],
             skip_if_default=self["skip_if_default"],
             include_src_in_docstring=self["include_src_in_docstring"],
+            skip_hooks=self["skip_hooks"],
         )
 
     def cache_key(self):

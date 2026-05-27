@@ -8,7 +8,7 @@ import typing_extensions as tp
 
 from . import functional as diof
 from .config2 import CallOptions
-from .core.from_dict import _EXTRA_FIELD_ATTR_NAME
+from .constants import _EXTRA_FIELD_ATTR_NAME
 from .types import PathOrHandle
 
 
@@ -35,6 +35,8 @@ class IOMixin:
         if hasattr(self, _EXTRA_FIELD_ATTR_NAME):
             return dict(getattr(self, _EXTRA_FIELD_ATTR_NAME))
         return {}
+
+    # IO methods
 
     @classmethod
     def from_json_file(
@@ -103,3 +105,63 @@ class IOMixin:
         dump_kw = dump_kw or {}
         with _fname_or_fpointer(fname_or_handle, mode="w", encoding="utf-8") as fp:
             json.dump(obj, fp, **dump_kw)
+
+    # Hooks
+    def __pre_to_dict__(self) -> None:
+        """Hook invoked before serialization to a dictionary.
+
+        Called on the instance prior to any field being read for ``to_dict``.
+        Use this to normalize, validate, or otherwise mutate ``self`` in place
+        so that the serialized output reflects the adjustments. To prevent serialization,
+        raise any exception.
+
+        The return value is ignored; this hook exists purely for its side effects on ``self``.
+        """
+        return
+
+    def __post_to_dict__(self, dikt: dict) -> dict:
+        """Hook invoked after serialization to a dict.
+
+        Called with the produced dictionary representation of ``self`` as its only argument.
+        This hook should return the desired dictionary to be returned from ``to_dict``, and that
+        may be the input argument. You may mute the input dictionary or return a new/replacement
+        dictionary to be used.
+
+        Args:
+            dikt: The dict produced by the generated ``to_dict`` method.
+
+        Returns:
+            The dictionary to return from ``to_dict``.
+        """
+        return dikt
+
+    @classmethod
+    def __pre_from_dict__(cls, dikt: dict) -> dict:
+        """Hook invoked before deserialization from a dict.
+
+        Called with the raw input dict before any field is read for
+        ``from_dict``. You may mutate ``dikt``,
+        or return a new/replacement dict to be used as the source for
+        deserialization. Useful for migrating legacy objects, renaming keys,
+        or filling in defaults.
+
+        Args:
+            dikt: The input dict passed to ``from_dict``.
+
+        Returns:
+            The dict to deserialize from.
+        """
+        return dikt
+
+    def __post_from_dict__(self, dikt: dict) -> None:
+        """Hook invoked after deserialization from a dict.
+
+        Called on the newly constructed instance after all fields have been
+        populated from ``dikt``. Use this to perform validation, derive
+        computed attributes, or otherwise finalize ``self`` in place.
+
+        Args:
+            dikt: The dict that was used to construct ``self`` (including any processing from
+                ``__pre_from_dict``, if implemented).
+        """
+        return

@@ -2,7 +2,7 @@ import dataclasses as dcs
 
 import typing_extensions as tp
 
-from dataclassio.sentinels import NO_DEFAULT, NoDefaultOr
+from dataclassio.constants import NO_DEFAULT, NoDefaultOr
 from dataclassio.types import TNamespace
 
 from .variables import set_variable_in_ns
