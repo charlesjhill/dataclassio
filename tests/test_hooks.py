@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
-from dataclassio import IOMixin  # adjust import
+import pytest
+
+from dataclassio import IOMixin
 from dataclassio import functional as F
 
 
@@ -14,12 +16,6 @@ class Point(IOMixin):
 # __pre_to_dict__
 # ---------------------------------------------------------------------------
 class TestPreToDict:
-    def test_not_invoked_when_not_overridden(self):
-        # Sanity check: base implementation is a no-op, and codegen should
-        # not even emit a call to it. We can't observe "not called" directly,
-        # but we can at least confirm to_dict works without surprises.
-        assert Point(1, 2).to_dict() == {"x": 1, "y": 2}
-
     def test_invoked_when_overridden(self):
         calls = []
 
@@ -70,7 +66,7 @@ class TestPostToDict:
         class Tagged(Point):
             def __post_to_dict__(self, dikt):
                 dikt["tag"] = "ok"
-                # implicit None return
+                return dikt
 
         assert Tagged(1, 2).to_dict() == {"x": 1, "y": 2, "tag": "ok"}
 
@@ -107,7 +103,7 @@ class TestPreFromDict:
             def __pre_from_dict__(cls, dikt):
                 if "X" in dikt:
                     dikt["x"] = dikt.pop("X")
-                # implicit None return
+                return dikt
 
         assert Migrating.from_dict({"X": 1, "y": 2}) == Migrating(1, 2)
 
@@ -218,6 +214,7 @@ class TestDuckTypedHooks:
 
             def __post_to_dict__(self, dikt):
                 dikt["tag"] = "ok"
+                return dikt
 
         assert F.to_dict(P(1, 2)) == {"x": 1, "y": 2, "tag": "ok"}
 
@@ -245,3 +242,63 @@ class TestDuckTypedHooks:
                 self.x *= -1
 
         assert F.from_dict(P, {"x": 1, "y": 2}) == P(-1, 2)
+
+
+# ---------------------------------------------------------------------------
+# Skip hooks
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Hooked(IOMixin):
+    x: int
+    y: int
+
+    def __post_init__(self):
+        self.calls = []
+        super().__post_init__()
+
+    def __pre_to_dict__(self) -> None:
+        self.calls.append("pre_to_dict")
+
+    def __post_to_dict__(self, dikt: dict) -> dict:
+        dikt["post_to_dict"] = True
+        return dikt
+
+    @classmethod
+    def __pre_from_dict__(cls, dikt: dict) -> dict:
+        dikt = dict(dikt)
+        dikt.setdefault("x", 0)
+        dikt["_pre_from_dict"] = True  # Will be ignored.
+        return dikt
+
+    def __post_from_dict__(self, dikt: dict) -> None:
+        self.calls.append("post_from_dict")
+
+
+class TestCallLevelSkipHooks:
+    def test_to_dict_runs_hooks_by_default(self):
+        h = Hooked(1, 2)
+        d = h.to_dict()
+
+        assert "pre_to_dict" in h.calls
+        assert d.get("post_to_dict") is True
+
+    def test_to_dict_skips_hooks_when_requested(self):
+        h = Hooked(1, 2)
+        d = h.to_dict(skip_hooks=True)
+        assert h.calls == []
+        assert "post_to_dict" not in d
+
+    def test_from_dict_runs_hooks_by_default(self):
+        h = Hooked.from_dict({"x": 1, "y": 2})
+        assert "post_from_dict" in h.calls
+
+    def test_from_dict_skips_hooks_when_requested(self):
+        # __pre_from_dict__ would inject a default for x; skipping should
+        # mean the missing key causes the usual error path.
+        with pytest.raises(KeyError):
+            Hooked.from_dict({"y": 2}, skip_hooks=True)
+
+        h = Hooked.from_dict({"x": 1, "y": 2}, skip_hooks=True)
+        assert h.calls == []
