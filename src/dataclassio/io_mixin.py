@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import types
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,10 +32,9 @@ class IOMixin:
 
     @property
     def extra_fields(self):
-        """Shallow copy of the extra fields stored in this instance from deserialization."""
-        if hasattr(self, _EXTRA_FIELD_ATTR_NAME):
-            return dict(getattr(self, _EXTRA_FIELD_ATTR_NAME))
-        return {}
+        """Readonly view of the extra fields stored in this instance from deserialization."""
+        d = getattr(self, _EXTRA_FIELD_ATTR_NAME, {})
+        return types.MappingProxyType(d)
 
     # IO methods
 

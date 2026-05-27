@@ -51,7 +51,6 @@ class OptionSpec(tp.Generic[T]):
     type_str: str
     default: T
     scopes: tp.Mapping[Scope, Propagation]
-    to_str: tp.Callable[[T], str]
 
 
 S = Scope
@@ -61,8 +60,11 @@ EXTRA_FIELD_STRATEGY = OptionSpec(
     name="extra_field_strategy",
     type_str="EFS",
     default=EFS.IGNORE,
-    scopes={S.CALL: P.DEEP, S.TYPE: P.LOCAL, S.FIELD: P.DEEP_ONCE},
-    to_str=lambda x: f"efs_{x.value}",
+    scopes={
+        S.CALL: P.DEEP,
+        S.TYPE: P.LOCAL,
+        S.FIELD: P.DEEP_ONCE,
+    },
 )
 
 DISCRIMINATOR = OptionSpec(
@@ -70,10 +72,9 @@ DISCRIMINATOR = OptionSpec(
     type_str="NoValueOr[str]",
     default=NO_VALUE,
     scopes={
+        # Consider adding S.TYPE: P.LOCAL for default discriminators for a type.
         S.FIELD: P.LOCAL,
-        # Conside r adding S.TYPE: P.LOCAL for default discriminators for a type.
     },
-    to_str=lambda x: f"discriminator_{x}",
 )
 
 SKIP_IF_DEFAULT = OptionSpec(
@@ -84,7 +85,6 @@ SKIP_IF_DEFAULT = OptionSpec(
         # S.TYPE: P.PARENT,
         S.FIELD: P.LOCAL,
     },
-    to_str=lambda x: f"skip_if_default_{x}",
 )
 
 SKIP_DEFAULTS = OptionSpec(
@@ -96,7 +96,6 @@ SKIP_DEFAULTS = OptionSpec(
         S.TYPE: P.LOCAL,
         S.FIELD: P.DEEP_ONCE,
     },
-    to_str=lambda x: f"skip_defaults_{x}",
 )
 
 INCLUDE_SRC_IN_DOCSTRING = OptionSpec(
@@ -104,11 +103,10 @@ INCLUDE_SRC_IN_DOCSTRING = OptionSpec(
     type_str="bool",
     default=False,
     scopes={S.CALL: P.DEEP},
-    to_str=lambda _: "incl_src",
 )
 
 SKIP_HOOKS = OptionSpec(
-    name="skip_hooks",
+    name="disable_hooks",
     type_str="bool",
     default=False,
     scopes={
@@ -116,18 +114,34 @@ SKIP_HOOKS = OptionSpec(
         S.TYPE: P.LOCAL,
         S.FIELD: P.DEEP_ONCE,
     },
-    to_str=lambda _: "skip_hooks",
+)
+
+SKIP_DUMP = OptionSpec(
+    name="skip",
+    type_str="bool",
+    default=False,
+    scopes={S.FIELD: P.LOCAL},
+)
+
+SKIP_EXTRAS = OptionSpec(
+    name="skip_extras",
+    type_str="bool",
+    default=False,
+    scopes={S.CALL: P.DEEP},
 )
 
 
-ALL_OPTIONS: tuple[OptionSpec, ...] = (
+ALL_OPTIONS: list[OptionSpec] = [
     EXTRA_FIELD_STRATEGY,
     DISCRIMINATOR,
     SKIP_IF_DEFAULT,
     SKIP_DEFAULTS,
     INCLUDE_SRC_IN_DOCSTRING,
     SKIP_HOOKS,
-)
+    SKIP_DUMP,
+    SKIP_EXTRAS,
+]
+ALL_OPTIONS.sort(key=lambda os: os.name)
 
 REGISTRY: dict[str, OptionSpec] = {o.name: o for o in ALL_OPTIONS}
 
@@ -139,33 +153,37 @@ REGISTRY: dict[str, OptionSpec] = {o.name: o for o in ALL_OPTIONS}
 
 
 class CallOptions(tp.TypedDict, total=False):
+    disable_hooks: bool
     extra_field_strategy: EFS
-    skip_defaults: NoValueOr[bool]
     include_src_in_docstring: bool
-    skip_hooks: bool
+    skip_defaults: NoValueOr[bool]
+    skip_extras: bool
 
 
 class TypeOptions(tp.TypedDict, total=False):
+    disable_hooks: bool
     extra_field_strategy: EFS
     skip_defaults: NoValueOr[bool]
-    skip_hooks: bool
 
 
 class _FieldOptions(tp.TypedDict, total=False):
-    extra_field_strategy: EFS
+    disable_hooks: bool
     discriminator: NoValueOr[str]
-    skip_if_default: NoValueOr[bool]
+    extra_field_strategy: EFS
+    skip: bool
     skip_defaults: NoValueOr[bool]
-    skip_hooks: bool
+    skip_if_default: NoValueOr[bool]
 
 
 class DioOptions(tp.TypedDict, total=True):
-    extra_field_strategy: EFS
+    disable_hooks: bool
     discriminator: NoValueOr[str]
-    skip_if_default: NoValueOr[bool]
-    skip_defaults: NoValueOr[bool]
+    extra_field_strategy: EFS
     include_src_in_docstring: bool
-    skip_hooks: bool
+    skip: bool
+    skip_defaults: NoValueOr[bool]
+    skip_extras: bool
+    skip_if_default: NoValueOr[bool]
 
 
 def FieldOptions(**kw: tp.Unpack[_FieldOptions]):
@@ -265,12 +283,14 @@ class ResolvedConfig:
 
     def as_dict(self):
         return DioOptions(
-            extra_field_strategy=self["extra_field_strategy"],
             discriminator=self["discriminator"],
-            skip_defaults=self["skip_defaults"],
-            skip_if_default=self["skip_if_default"],
+            skip=self["skip"],
+            skip_extras=self["skip_extras"],
+            extra_field_strategy=self["extra_field_strategy"],
             include_src_in_docstring=self["include_src_in_docstring"],
-            skip_hooks=self["skip_hooks"],
+            skip_defaults=self["skip_defaults"],
+            disable_hooks=self["disable_hooks"],
+            skip_if_default=self["skip_if_default"],
         )
 
     def cache_key(self):

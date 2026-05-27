@@ -81,13 +81,15 @@ assert address_obj.to_dict() == address_data  # extra fields survive round trip.
 
 A handful of configuration options are supported to customize serialization and deserialization. These can be provided either at time of a `to_dict` or `from_dict` call ("call-level config") or can be applied to individual dataclass fields statically ("field-level config"). Not all options can be provided in both places. The following options are supported:
 
+* `disable_hooks`: A flag to skip `to_dict` and `from_dict` hooks, even if they are defined on a type.
 * `discriminator`: The name of a field to use when discrimating between unions of dataclass types.
+* `extra_field_strategy`: The preferred method for handling unexpected fields during deserialization (`from_dict`). By default they are ignored. Alternatively, an exception can be raised (`STRICT`-mode) or they can be captured into a private attribute of the object (`CAPTURE`-mode). In `CAPTURE`-mode, the unexpected fields are yielded in the `to_dict` call, supporting full round-tripping.
+* `include_src_in_docstring`: A flag to include `to_dict` and `from_dict` method source code in their corresponding docstrings. This is useful since their source code is dynamically generated.
+* `skip`: Field-level flag to omit a field from `to_dict`.
+* `skip_extras`: Call-level flag to omit any cpatured extra fields from `to_dict`. If you know that your instances do not have extras, or don't care to preserve this, this can be safely toggled to `True`.
 * `skip_if_default`/`skip_defaults`: Flags to omit fields during the `to_dict` call if they have the default value. `skip_if_default` is field-level only, and has the highest precedence. `skip_defaults` can be applied at the call- and field-level. At the field-level, `skip_defaults` has a slightly different meaning from `skip_if_default`:
     * `x: T = field(..., FieldOptions(skip_if_default=True))`: Suppress serialization of the field `x` if its value equals the default.
     * `x: T = field(..., FieldOptions(skip_defaults=True))`: Suppress serialization of `T`'s fields if they have a default value.
-* `extra_field_strategy`: The preferred method for handling unexpected fields during deserialization (`from_dict`). By default they are ignored. Alternatively, an exception can be raised (`STRICT`-mode) or they can be captured into a private attribute of the object (`CAPTURE`-mode). In `CAPTURE`-mode, the unexpected fields are yielded in the `to_dict` call, supporting full round-tripping.
-* `include_src_in_docstring`: A flag to include `to_dict` and `from_dict` method source code in their corresponding docstrings. This is useful since their source code is dynamically generated.
-* `skip_hooks`: A flag to skip `to_dict` and `from_dict` hooks, even if they are defined on a type.
 
 ### Propagation and Precedence
 

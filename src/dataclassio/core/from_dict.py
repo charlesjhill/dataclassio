@@ -103,7 +103,7 @@ def make_from_dict_source_code(
     # Start with the try/except block for required keys.
     body = TextLines(spacer=_SPACER)
 
-    if overrides_hook(cls, _PRE_FROM_DICT_HOOK) and not frame_config["skip_hooks"]:
+    if overrides_hook(cls, _PRE_FROM_DICT_HOOK) and not frame_config["disable_hooks"]:
         body.append(f"dikt = {cls_factory_name}.{_PRE_FROM_DICT_HOOK}(dikt)")
 
     req_fields = [v for v in field_data.values() if not v.has_default]
@@ -158,7 +158,7 @@ def make_from_dict_source_code(
     # N.B. For EFS.STRICT, this _could_ go at the top of the function body to bail early
     body.extend(extras)
 
-    if overrides_hook(cls, _POST_FROM_DICT_HOOK) and not frame_config["skip_hooks"]:
+    if overrides_hook(cls, _POST_FROM_DICT_HOOK) and not frame_config["disable_hooks"]:
         body.append(f"inst.{_POST_FROM_DICT_HOOK}(dikt)")
 
     body.append("return inst")
