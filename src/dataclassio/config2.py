@@ -106,7 +106,7 @@ INCLUDE_SRC_IN_DOCSTRING = OptionSpec(
 )
 
 SKIP_HOOKS = OptionSpec(
-    name="skip_hooks",
+    name="disable_hooks",
     type_str="bool",
     default=False,
     scopes={
@@ -116,17 +116,17 @@ SKIP_HOOKS = OptionSpec(
     },
 )
 
-DUMP_OPT = OptionSpec(
-    name="dump",
+SKIP_DUMP = OptionSpec(
+    name="skip",
     type_str="bool",
-    default=True,
+    default=False,
     scopes={S.FIELD: P.LOCAL},
 )
 
-DUMP_EXTRAS = OptionSpec(
-    name="dump_extras",
+SKIP_EXTRAS = OptionSpec(
+    name="skip_extras",
     type_str="bool",
-    default=True,
+    default=False,
     scopes={S.CALL: P.DEEP},
 )
 
@@ -138,8 +138,8 @@ ALL_OPTIONS: list[OptionSpec] = [
     SKIP_DEFAULTS,
     INCLUDE_SRC_IN_DOCSTRING,
     SKIP_HOOKS,
-    DUMP_OPT,
-    DUMP_EXTRAS,
+    SKIP_DUMP,
+    SKIP_EXTRAS,
 ]
 ALL_OPTIONS.sort(key=lambda os: os.name)
 
@@ -153,36 +153,36 @@ REGISTRY: dict[str, OptionSpec] = {o.name: o for o in ALL_OPTIONS}
 
 
 class CallOptions(tp.TypedDict, total=False):
-    dump_extras: bool
+    disable_hooks: bool
     extra_field_strategy: EFS
     include_src_in_docstring: bool
     skip_defaults: NoValueOr[bool]
-    skip_hooks: bool
+    skip_extras: bool
 
 
 class TypeOptions(tp.TypedDict, total=False):
+    disable_hooks: bool
     extra_field_strategy: EFS
     skip_defaults: NoValueOr[bool]
-    skip_hooks: bool
 
 
 class _FieldOptions(tp.TypedDict, total=False):
+    disable_hooks: bool
     discriminator: NoValueOr[str]
-    dump: bool
     extra_field_strategy: EFS
+    skip: bool
     skip_defaults: NoValueOr[bool]
-    skip_hooks: bool
     skip_if_default: NoValueOr[bool]
 
 
 class DioOptions(tp.TypedDict, total=True):
+    disable_hooks: bool
     discriminator: NoValueOr[str]
-    dump: bool
-    dump_extras: bool
     extra_field_strategy: EFS
     include_src_in_docstring: bool
+    skip: bool
     skip_defaults: NoValueOr[bool]
-    skip_hooks: bool
+    skip_extras: bool
     skip_if_default: NoValueOr[bool]
 
 
@@ -284,12 +284,12 @@ class ResolvedConfig:
     def as_dict(self):
         return DioOptions(
             discriminator=self["discriminator"],
-            dump=self["dump"],
-            dump_extras=self["dump_extras"],
+            skip=self["skip"],
+            skip_extras=self["skip_extras"],
             extra_field_strategy=self["extra_field_strategy"],
             include_src_in_docstring=self["include_src_in_docstring"],
             skip_defaults=self["skip_defaults"],
-            skip_hooks=self["skip_hooks"],
+            disable_hooks=self["disable_hooks"],
             skip_if_default=self["skip_if_default"],
         )
 

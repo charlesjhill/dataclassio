@@ -286,7 +286,7 @@ class TestCallLevelSkipHooks:
 
     def test_to_dict_skips_hooks_when_requested(self):
         h = Hooked(1, 2)
-        d = h.to_dict(skip_hooks=True)
+        d = h.to_dict(disable_hooks=True)
         assert h.calls == []
         assert "post_to_dict" not in d
 
@@ -298,7 +298,7 @@ class TestCallLevelSkipHooks:
         # __pre_from_dict__ would inject a default for x; skipping should
         # mean the missing key causes the usual error path.
         with pytest.raises(KeyError):
-            Hooked.from_dict({"y": 2}, skip_hooks=True)
+            Hooked.from_dict({"y": 2}, disable_hooks=True)
 
-        h = Hooked.from_dict({"x": 1, "y": 2}, skip_hooks=True)
+        h = Hooked.from_dict({"x": 1, "y": 2}, disable_hooks=True)
         assert h.calls == []

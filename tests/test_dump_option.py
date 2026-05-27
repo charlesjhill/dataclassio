@@ -18,7 +18,7 @@ class TestDump:
         @dataclass
         class MyClass:
             x: int
-            y: int = field(metadata=FieldOptions(dump=False))
+            y: int = field(metadata=FieldOptions(skip=True))
 
         obj = MyClass(x=1, y=2)
         assert F.to_dict(obj) == {"x": 1}
@@ -28,9 +28,9 @@ class TestDump:
 
         @dataclass
         class MyClass:
-            x: int = field(metadata=FieldOptions(dump=False))
-            y: int = field(metadata=FieldOptions(dump=False))
-            z: str = field(metadata=FieldOptions(dump=False))
+            x: int = field(metadata=FieldOptions(skip=True))
+            y: int = field(metadata=FieldOptions(skip=True))
+            z: str = field(metadata=FieldOptions(skip=True))
 
         obj = MyClass(x=1, y=2, z="hello")
         assert F.to_dict(obj) == {}

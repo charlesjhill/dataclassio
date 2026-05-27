@@ -46,7 +46,7 @@ def make_to_dict_source_code(
         field_config = frame_config.build_field_config(field_opts)
         field_config_dict = field_config.as_dict()
 
-        if not field_config_dict["dump"]:
+        if field_config_dict["skip"]:
             continue
 
         child_inherited = field_config.project_for_child()
@@ -92,7 +92,7 @@ def make_to_dict_source_code(
             # Either this field has no default, or we are keeping all values. This easy.
             literal_lines.append(f"{f.name!r}: {field_expr},")
 
-    if frame_config["dump_extras"]:
+    if not frame_config["skip_extras"]:
         # Handle the extra fields. If there are no "default checking" lines, we can pack this into
         #  the bottom of the literals. If we do check some fields for their default value,
         #  we include the extra field population right before export to try keeping the "real"
@@ -123,7 +123,7 @@ def make_to_dict_source_code(
     lines = TextLines(spacer=_SPACER)
     funcname = frame_config.get_func_name(cls, "serialize")
 
-    if frame_config["skip_hooks"]:
+    if frame_config["disable_hooks"]:
         insert_pre = False
         insert_post = False
     else:

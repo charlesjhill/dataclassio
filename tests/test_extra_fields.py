@@ -14,7 +14,7 @@ class TestDictExtras:
 
         # And skipping extras works as expected
         dikt.pop("bonus")
-        assert inst.to_dict(dump_extras=False) == dikt
+        assert inst.to_dict(skip_extras=True) == dikt
 
     def test_strict(self):
         kls = _sch.CocoCategory
@@ -29,7 +29,7 @@ class TestDictExtras:
 
         # And dumping w/o the extras has no issue, of course.
         assert inst == _sch.CocoCategory(1, "person", "person")
-        assert inst.to_dict(dump_extras=False) == dikt
+        assert inst.to_dict(skip_extras=True) == dikt
 
     def test_capture(self):
         kls = _sch.CocoCategory
@@ -40,7 +40,7 @@ class TestDictExtras:
         assert inst.to_dict() == dikt
 
         # Check that we can disable dumping extras
-        assert inst.to_dict(dump_extras=False) == {
+        assert inst.to_dict(skip_extras=True) == {
             "id": 1,
             "name": "person",
             "supercategory": "person",
