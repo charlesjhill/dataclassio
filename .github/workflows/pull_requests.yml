@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - uses: astral-sh/setup-uv@v8.1.0
       - name: Run ruff check
-        run: uvx ruff check .
+        run: uvx ruff check --output-format=github .
       - name: Run ruff format check
         run: uvx ruff format --check .
 
