@@ -131,6 +131,22 @@ SKIP_EXTRAS = OptionSpec(
 )
 
 
+# Aliases
+LOAD_ALIAS = OptionSpec(
+    name="load_alias",
+    type_str="NoValueOr[tuple[str, ...] | str]",
+    default=NO_VALUE,
+    scopes={S.FIELD: P.LOCAL},
+)
+
+DUMP_ALIAS = OptionSpec(
+    name="dump_alias",
+    type_str="NoValueOr[str]",
+    default=NO_VALUE,
+    scopes={S.FIELD: P.LOCAL},
+)
+
+
 ALL_OPTIONS: list[OptionSpec] = [
     EXTRA_FIELD_STRATEGY,
     DISCRIMINATOR,
@@ -140,6 +156,8 @@ ALL_OPTIONS: list[OptionSpec] = [
     SKIP_HOOKS,
     SKIP_DUMP,
     SKIP_EXTRAS,
+    LOAD_ALIAS,
+    DUMP_ALIAS,
 ]
 ALL_OPTIONS.sort(key=lambda os: os.name)
 
@@ -148,7 +166,6 @@ REGISTRY: dict[str, OptionSpec] = {o.name: o for o in ALL_OPTIONS}
 ## ----------------------------------------------------
 ## User-facing APIs for Call/Type/Field Options
 ## ----------------------------------------------------
-
 # See scripts/generate_option_typed_dicts.py to generate these from `ALL_OPTIONS`.
 
 
@@ -169,7 +186,9 @@ class TypeOptions(tp.TypedDict, total=False):
 class _FieldOptions(tp.TypedDict, total=False):
     disable_hooks: bool
     discriminator: NoValueOr[str]
+    dump_alias: NoValueOr[str]
     extra_field_strategy: EFS
+    load_alias: NoValueOr[tp.Sequence[str] | str]
     skip: bool
     skip_defaults: NoValueOr[bool]
     skip_if_default: NoValueOr[bool]
@@ -178,8 +197,10 @@ class _FieldOptions(tp.TypedDict, total=False):
 class DioOptions(tp.TypedDict, total=True):
     disable_hooks: bool
     discriminator: NoValueOr[str]
+    dump_alias: NoValueOr[str]
     extra_field_strategy: EFS
     include_src_in_docstring: bool
+    load_alias: NoValueOr[tp.Sequence[str] | str]
     skip: bool
     skip_defaults: NoValueOr[bool]
     skip_extras: bool
@@ -291,6 +312,8 @@ class ResolvedConfig:
             skip_defaults=self["skip_defaults"],
             disable_hooks=self["disable_hooks"],
             skip_if_default=self["skip_if_default"],
+            load_alias=self["load_alias"],
+            dump_alias=self["dump_alias"],
         )
 
     def cache_key(self):
