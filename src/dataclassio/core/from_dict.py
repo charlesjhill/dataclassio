@@ -10,12 +10,13 @@ from dataclassio.constants import (
     _POST_FROM_DICT_HOOK,
     _PRE_FROM_DICT_HOOK,
     _SPACER,
+    NO_VALUE,
     CycleOr,
 )
 from dataclassio.types import EFS, DataclassInstance, TDataclass, TNamespace
 
 from ._shared_codegen import maker_core, overrides_hook
-from .expression_builder import SerializerData, get_field_expression
+from .expression_builder import SerializerData, build_expr
 from .field_methods import field_has_default, get_fields, parse_default_expression
 from .lines import TextLines
 from .variables import make_variable_name, set_variable_in_ns
@@ -30,13 +31,10 @@ _KNOWN_DESERIALIZERS: dict[tuple[type, tp.Any], tp.Callable[[tp.Mapping], tp.Any
 
 class FieldSpec(tp.NamedTuple):
     field: dcs.Field
+    name: str
     var_name: str
     expr: str
     has_default: bool
-
-    @property
-    def name(self):
-        return self.field.name
 
     @property
     def kw_only(self):
@@ -72,9 +70,25 @@ def make_from_dict_source_code(
         child_inherited = field_config.project_for_child()
         cache_key = child_inherited.legacy_cache_key
 
+        # Handle aliases
+        load_alias = field_config.as_dict()["load_alias"]
+        if load_alias is NO_VALUE:
+            base_expr = f"dikt[{f.name!r}]"
+        elif isinstance(load_alias, str):
+            base_expr = f"dikt[{load_alias!r}]"
+        elif isinstance(load_alias, tp.Sequence):
+            # sigh... This is the trickiest setup. We can format this as a chain of if/elif/else.
+            # TODO: Finish implementing this:
+            base_expr = f"dikt[{load_alias[0]!r}]"
+        else:
+            msg = f"{load_alias=} should be a str or Sequence[str]. Got {type(load_alias)}."
+            raise RuntimeError(msg)  # TODO: MisconfigurationException
+
         # Get the expression for parsing this field.
-        field_expr = get_field_expression(
-            f,
+        assert not isinstance(f.type, str)
+        field_expr = build_expr(
+            f.type,
+            base_expr,
             serializer_data=SerializerData(
                 registry=_KNOWN_DESERIALIZERS,
                 namespace=_ns,
@@ -94,6 +108,7 @@ def make_from_dict_source_code(
 
         field_data[f.name] = FieldSpec(
             f,
+            f.name,
             var_name,
             field_expr,
             field_has_default(f),
@@ -113,6 +128,7 @@ def make_from_dict_source_code(
                 body.append(f"{fs.var_name} = {fs.expr}")
 
         with body.indent("except KeyError as _exc:"):
+            # TODO: Update this error message to support load aliases.
             req_names = ", ".join(f"{n.name!r}" for n in req_fields)
             body.append(f"missing = {{ {req_names} }} - dikt.keys()")
             with body.indent("raise KeyError("):
@@ -212,6 +228,8 @@ def _handle_extra_fields(
     # Precompute a lookup table with the known fields for this class.
     #  N.B. This will include init=False fields, thus preventing them from being counted
     #       as an extra.
+
+    # TODO: Consider field load_aliases here.
     possible_field_names = frozenset(f.name for f in fields)
     n_expected_fields = len(possible_field_names)
 
