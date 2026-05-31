@@ -2,6 +2,8 @@
 
 import typing_extensions as tp
 
+from dataclassio.core._shared_codegen import validate_type_hints
+
 from .config2 import CallOptions, ResolvedConfig
 from .constants import CYCLE_DETECTED
 from .core import from_dict as load_core
@@ -110,6 +112,7 @@ def print_to_dict_source_code(
     cfg = ResolvedConfig.from_call(opts).build_frame_config(cls)
 
     ns = {}
+    validate_type_hints(cls)
     src = dump_core.make_to_dict_source_code(cls, frame_config=cfg, _ns=ns)
     print(src)
     return ns
@@ -126,6 +129,7 @@ def print_from_dict_source_code(
     cfg = ResolvedConfig.from_call(opts).build_frame_config(cls)
 
     ns = {}
+    validate_type_hints(cls)
     src = load_core.make_from_dict_source_code(cls, frame_config=cfg, _ns=ns)
     print(src)
     return ns

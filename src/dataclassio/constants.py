@@ -13,6 +13,8 @@ __all__ = (
     "InProgressOr",
     "CYCLE_DETECTED",
     "CycleOr",
+    "ALIAS_OBJ",
+    "AliasOr",
     "_PRE_TO_DICT_HOOK",
     "_POST_TO_DICT_HOOK",
     "_PRE_FROM_DICT_HOOK",
@@ -34,12 +36,14 @@ class _Sentinels(Enum):
     NO_VALUE = auto()
     IN_PROGRESS = auto()
     CYCLE_DETECTED = auto()
+    ALIAS_OBJ = auto()
 
 
 NO_DEFAULT: tp.Final = _Sentinels.NO_DEFAULT
 NO_VALUE: tp.Final = _Sentinels.NO_VALUE
 IN_PROGRESS: tp.Final = _Sentinels.IN_PROGRESS
 CYCLE_DETECTED: tp.Final = _Sentinels.CYCLE_DETECTED
+ALIAS_OBJ: tp.Final = _Sentinels.ALIAS_OBJ
 
 
 T = tp.TypeVar("T")
@@ -47,3 +51,4 @@ NoValueOr: tp.TypeAlias = T | tp.Literal[_Sentinels.NO_VALUE]
 NoDefaultOr: tp.TypeAlias = T | tp.Literal[_Sentinels.NO_DEFAULT]
 InProgressOr: tp.TypeAlias = T | tp.Literal[_Sentinels.IN_PROGRESS]
 CycleOr: tp.TypeAlias = T | tp.Literal[_Sentinels.CYCLE_DETECTED]
+AliasOr: tp.TypeAlias = T | tp.Literal[_Sentinels.ALIAS_OBJ]
