@@ -7,12 +7,12 @@ import typing_extensions as tp
 
 from dataclassio.config2 import DioOptions
 from dataclassio.constants import CYCLE_DETECTED, NO_VALUE, CycleOr, NoValueOr
-from dataclassio.types import DataclassInstance, FunctionMaker
+from dataclassio.types import DataclassInstance, FunctionMaker, TNamespace
 
 from .field_methods import get_fields
 from .variables import set_variable_in_ns
 
-__all__ = ("SerializerData", "build_expr", "get_field_expression")
+__all__ = ("SerializerData", "build_expr")
 
 
 class ParserOutput(tp.NamedTuple):
@@ -28,7 +28,7 @@ class SerializerData(tp.NamedTuple):
     """Extra information needed by `build_expr` to parse nested dataclasses."""
 
     registry: tp.MutableMapping
-    namespace: tp.MutableMapping
+    namespace: TNamespace
     maker_func: FunctionMaker
     cache_key: tuple[tp.Hashable, str]
     options: DioOptions
@@ -44,6 +44,7 @@ class SerializerData(tp.NamedTuple):
             # Fallback path. DO NOT add this crap to the global namespace.
             update_ns = False
 
+        # TODO: Use `ResolvedConfig.make_func_name` in case we diverge with naming conventions.
         fname = f"{self.func_prefix}_{kls.__name__}{self.cache_key[1]}"
         if update_ns:
             self.namespace[fname] = parser
@@ -227,29 +228,6 @@ def build_expr(
 
     # 3. Fallbacks
     return expr_str
-
-
-def get_field_expression(f: dcs.Field, serializer_data: SerializerData) -> str:
-    """Create the expression to pack or unpack a dataclass field.
-
-    This is mostly a convenience wrapper around `build_expr`.
-
-    Args:
-        f: The dataclasses.Field to parse.
-        serializer_data: The structure to track information for parsing embedded dataclasses.
-    """
-    if serializer_data.func_prefix == "serialize":
-        access_expr = f"inst.{f.name}"
-    elif serializer_data.func_prefix == "deserialize":
-        access_expr = f"dikt[{f.name!r}]"
-    else:
-        msg = f"Unsupported {serializer_data.func_prefix=}. Expected 'deserialize' or 'serialize'."
-        raise ValueError(msg)
-
-    ft = f.type
-    assert not isinstance(ft, str)
-
-    return build_expr(ft, access_expr, serializer_data=serializer_data)
 
 
 def strip_optional(t: tp.TypeForm) -> tuple[tp.Any, bool]:

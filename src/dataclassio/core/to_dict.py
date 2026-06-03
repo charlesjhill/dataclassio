@@ -14,7 +14,7 @@ from dataclassio.constants import (
 from dataclassio.types import DataclassInstance, TDataclass, TNamespace
 
 from ._shared_codegen import maker_core, overrides_hook
-from .expression_builder import SerializerData, get_field_expression
+from .expression_builder import SerializerData, build_expr
 from .field_methods import field_has_default, get_fields, parse_default_expression
 from .lines import TextLines
 
@@ -52,8 +52,10 @@ def make_to_dict_source_code(
         child_inherited = field_config.project_for_child()
         cache_key = child_inherited.legacy_cache_key
 
-        field_expr = get_field_expression(
-            f,
+        assert not isinstance(f.type, str)
+        field_expr = build_expr(
+            f.type,
+            f"inst.{f.name}",
             serializer_data=SerializerData(
                 registry=_KNOWN_SERIALIZERS,
                 namespace=_ns,
@@ -64,6 +66,17 @@ def make_to_dict_source_code(
             ),
         )
 
+        # Check aliases
+        dump_alias = field_config_dict["dump_alias"]
+        if dump_alias is NO_VALUE:
+            dikt_target = f"{f.name!r}"
+        elif isinstance(dump_alias, str):
+            dikt_target = f"{dump_alias!r}"
+        else:
+            msg = f"{dump_alias=} must be a string or unspecified. Got {type(dump_alias)}."
+            # TODO: Use custom MisconfigurationException.
+            raise RuntimeError(msg)
+
         # Decide if we should try to skip this field if it has a default value.
         # There are two control knobs at play here:
         #  - skip_if_default  (FIELD-LOCAL; NoValueOr[bool])
@@ -72,14 +85,13 @@ def make_to_dict_source_code(
         # Otherwise, we insepct skip_defaults in the FRAME configuration. This is specifically
         #  becuase we want to ignore the skip_defaults opt set on this field directly since
         #  field(skip_defaults=...) is meant for the next frame, not this one.
-
-        skip_this_field: bool = False
+        check_default: bool = False
         if (s := field_config_dict["skip_if_default"]) is not NO_VALUE or (
             s := frame_config["skip_defaults"]
         ) is not NO_VALUE:
-            skip_this_field = s
+            check_default = s
 
-        if skip_this_field and field_has_default(f):
+        if check_default and field_has_default(f):
             default_expression = parse_default_expression(f, _ns, precompute_factory=False)
             assert isinstance(default_expression, str)
             comparator = "is not" if default_expression == "None" else "!="
@@ -87,10 +99,10 @@ def make_to_dict_source_code(
             with default_check_lines.indent(
                 f"if inst.{f.name} {comparator} {default_expression}:"
             ):
-                default_check_lines.append(f"dikt[{f.name!r}] = {field_expr}")
+                default_check_lines.append(f"dikt[{dikt_target}] = {field_expr}")
         else:
             # Either this field has no default, or we are keeping all values. This easy.
-            literal_lines.append(f"{f.name!r}: {field_expr},")
+            literal_lines.append(f"{dikt_target}: {field_expr},")
 
     if not frame_config["skip_extras"]:
         # Handle the extra fields. If there are no "default checking" lines, we can pack this into

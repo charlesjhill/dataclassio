@@ -1,6 +1,7 @@
 import dataclasses as dcs
 import inspect
 from functools import partial
+from itertools import chain
 
 import typing_extensions as tp
 
@@ -10,12 +11,15 @@ from dataclassio.constants import (
     _POST_FROM_DICT_HOOK,
     _PRE_FROM_DICT_HOOK,
     _SPACER,
+    ALIAS_OBJ,
+    NO_VALUE,
     CycleOr,
+    NoValueOr,
 )
 from dataclassio.types import EFS, DataclassInstance, TDataclass, TNamespace
 
 from ._shared_codegen import maker_core, overrides_hook
-from .expression_builder import SerializerData, get_field_expression
+from .expression_builder import SerializerData, build_expr
 from .field_methods import field_has_default, get_fields, parse_default_expression
 from .lines import TextLines
 from .variables import make_variable_name, set_variable_in_ns
@@ -28,11 +32,19 @@ __all__ = (
 _KNOWN_DESERIALIZERS: dict[tuple[type, tp.Any], tp.Callable[[tp.Mapping], tp.Any]] = {}
 
 
+class AliasRet(tp.NamedTuple):
+    base_expr: str
+    alias_statements: TextLines
+    lookup_names: tuple[str, ...]
+    sentinel_var_name: str = ""
+
+
 class FieldSpec(tp.NamedTuple):
     field: dcs.Field
     var_name: str
     expr: str
     has_default: bool
+    alias_data: AliasRet
 
     @property
     def name(self):
@@ -41,6 +53,62 @@ class FieldSpec(tp.NamedTuple):
     @property
     def kw_only(self):
         return self.field.kw_only
+
+    @property
+    def extra_statements(self):
+        return self.alias_data.alias_statements
+
+    @property
+    def lookup_names(self):
+        return self.alias_data.lookup_names
+
+
+def _get_alias_lookup(
+    f: dcs.Field,
+    opt: NoValueOr[str | tp.Sequence[str]],
+    is_required: bool,
+    _ns: TNamespace,
+    target_var_name: str,
+) -> AliasRet:
+    text = TextLines(spacer=_SPACER)
+    field_name = f.name
+
+    if opt is NO_VALUE:
+        return AliasRet(f"dikt[{field_name!r}]", text, (field_name,))
+
+    if isinstance(opt, str):
+        return AliasRet(f"dikt[{opt!r}]", text, (opt,))
+
+    if isinstance(opt, tp.Sequence) and len(opt) == 1:
+        return AliasRet(f"dikt[{opt[0]!r}]", text, tuple(opt))
+
+    if not isinstance(opt, tp.Sequence):
+        msg = f"load_alias={opt} should be a str or Sequence[str]. Got {type(opt)}."
+        raise RuntimeError(msg)  # TODO: MisconfigurationException
+
+    # Add a local sentinel value.
+    sent_name = set_variable_in_ns("ALIAS_OBJ", value=ALIAS_OBJ, ns=_ns)
+
+    # handle the first option
+    vname = target_var_name
+    val = opt[0]
+    with text.indent(f"if ({vname} := dikt.get({val!r}, {sent_name})) is not {sent_name}:"):
+        text.append("pass")
+
+    # Anndddd the rest.
+    for val in opt[1:-1]:
+        with text.indent(f"elif ({vname} := dikt.get({val!r}, {sent_name})) is not {sent_name}:"):
+            text.append("pass")
+
+    val = opt[-1]
+    with text.indent(f"elif ({vname} := dikt.get({val!r}, {sent_name})) is {sent_name}:"):
+        if is_required:
+            msg = f"No valid aliases for field={f.name} found. Expected one of {list(opt)}."
+            text.append(f"raise KeyError({msg!r})")
+        else:
+            text.append("pass")
+
+    return AliasRet(vname, text, tuple(opt), sent_name)
 
 
 def make_from_dict_source_code(
@@ -68,13 +136,31 @@ def make_from_dict_source_code(
         # extract and integrate field-options
         field_opts = f.metadata.get("dio")
         field_config = frame_config.build_field_config(field_opts)
+        field_config_dict = field_config.as_dict()
 
         child_inherited = field_config.project_for_child()
         cache_key = child_inherited.legacy_cache_key
 
-        # Get the expression for parsing this field.
-        field_expr = get_field_expression(
+        # This is the assignment target for our variable.
+        var_name = make_variable_name(f.name, ns=current_variable_names.union(_ns))
+        current_variable_names.add(var_name)
+
+        # Handle aliases
+        f_has_default = field_has_default(f)
+        load_alias = field_config_dict["load_alias"]
+        alias_ret = _get_alias_lookup(
             f,
+            load_alias,
+            not f_has_default,
+            _ns=_ns,
+            target_var_name=var_name,
+        )
+
+        # Get the expression for parsing this field.
+        assert not isinstance(f.type, str)
+        field_expr = build_expr(
+            f.type,
+            alias_ret.base_expr,
             serializer_data=SerializerData(
                 registry=_KNOWN_DESERIALIZERS,
                 namespace=_ns,
@@ -84,19 +170,17 @@ def make_from_dict_source_code(
                     _ns=_ns,
                 ),
                 cache_key=cache_key,
-                options=field_config.as_dict(),
+                options=field_config_dict,
                 func_prefix="deserialize",
             ),
         )
-
-        var_name = make_variable_name(f.name, ns=current_variable_names.union(_ns))
-        current_variable_names.add(var_name)
 
         field_data[f.name] = FieldSpec(
             f,
             var_name,
             field_expr,
-            field_has_default(f),
+            f_has_default,
+            alias_ret,
         )
 
     # Assemble the final function body
@@ -110,10 +194,14 @@ def make_from_dict_source_code(
     if req_fields:
         with body.indent("try:"):
             for fs in req_fields:
-                body.append(f"{fs.var_name} = {fs.expr}")
-
+                body.extend(fs.extra_statements)
+                if fs.var_name != fs.expr:
+                    body.append(f"{fs.var_name} = {fs.expr}")
         with body.indent("except KeyError as _exc:"):
-            req_names = ", ".join(f"{n.name!r}" for n in req_fields)
+            # TODO: This is wrong for multi-aliased fields.
+            req_names = ", ".join(
+                f"{x!r}" for x in chain.from_iterable(f.lookup_names for f in req_fields)
+            )
             body.append(f"missing = {{ {req_names} }} - dikt.keys()")
             with body.indent("raise KeyError("):
                 body.append(
@@ -124,8 +212,13 @@ def make_from_dict_source_code(
     # Now a block for optional parameters
     opt_fields = [v for v in field_data.values() if v.has_default]
     for fs in opt_fields:
+        lookup_name = fs.lookup_names[0]
+        check_expr = f"{lookup_name!r} in dikt"
+        if fs.extra_statements:
+            check_expr = f"{fs.var_name} is not {fs.alias_data.sentinel_var_name}"
+            body.extend(fs.extra_statements)
         default_expr = parse_default_expression(fs.field, _ns)
-        body.append(f"{fs.var_name} = {fs.expr} if {fs.name!r} in dikt else {default_expr}")
+        body.append(f"{fs.var_name} = {fs.expr} if {check_expr} else {default_expr}")
 
     # Now we need to build the constructor string. At this point, we have a local variable
     #  for every initializable argument. We need to do two things:
@@ -145,9 +238,12 @@ def make_from_dict_source_code(
     data_str = ", ".join(init_parts)
 
     # Generate code to handle extra fields.
+    all_field_names = chain(
+        (f.name for f in fields if not f.init), *(fs.lookup_names for fs in field_data.values())
+    )
     extras = _handle_extra_fields(
         cls,
-        fields,
+        all_field_names,
         frame_config["extra_field_strategy"],
         ns=_ns,
         attribute_name=_EXTRA_FIELD_ATTR_NAME,
@@ -196,7 +292,7 @@ def make_from_dict(
 
 def _handle_extra_fields(
     cls: type[DataclassInstance],
-    fields: tp.Iterable[dcs.Field],
+    field_names: tp.Iterable[str],
     strategy: EFS,
     *,
     ns: TNamespace,
@@ -212,7 +308,7 @@ def _handle_extra_fields(
     # Precompute a lookup table with the known fields for this class.
     #  N.B. This will include init=False fields, thus preventing them from being counted
     #       as an extra.
-    possible_field_names = frozenset(f.name for f in fields)
+    possible_field_names = frozenset(field_names)
     n_expected_fields = len(possible_field_names)
 
     field_names_set_varname = set_variable_in_ns(
